@@ -1,0 +1,2559 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PBR Ocean + True Liquid Glass + Text Engraving CSG</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800;900&family=Roboto+Slab:wght@700;900&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+:root{
+  --frost:4px; --glass-a:0.42; --glass-brd:rgba(255,255,255,.18); --txt:#2b2440; --txt-dim:rgba(43,36,64,.62); --accent:#0a7fc2; --frost-milk:rgba(200, 210, 220, 0.85); 
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;background:#0a0d12;font-family:'Nunito',system-ui,sans-serif;color:var(--txt);}
+body { user-select: none; -webkit-user-select: none; }
+#canvas-container{position:fixed;inset:0;}
+
+/* ===== LIQUID GLASS ===== */
+.fm-glass{
+  --blur:var(--frost); --sat:1.9; --con:1.06; --bri:1.05;
+  --read-rgb:255,255,255; --read-fill:0; 
+  --txt:#2b2440; --txt-dim:rgba(43,36,64,.62); --accent:#0a7fc2;
+  position:absolute; display:flex; flex-direction:column; overflow:hidden; z-index: 10;
+  background:
+    radial-gradient(125% 80% at 50% -12%, rgba(255,255,255,.40), rgba(255,255,255,0) 55%),
+    linear-gradient(155deg, rgba(248,247,234,.44) 0%, rgba(248,247,234,.20) 40%, rgba(248,247,234,.13) 62%, rgba(248,247,234,.27) 100%);
+  -webkit-backdrop-filter:blur(var(--blur)) saturate(var(--sat)) contrast(var(--con)) brightness(var(--bri));
+          backdrop-filter:blur(var(--blur)) saturate(var(--sat)) contrast(var(--con)) brightness(var(--bri));
+  border:1px solid rgba(255,255,255,.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.55), inset 0 11px 30px -16px rgba(255,255,255,.38),
+    inset 0 -18px 42px -20px rgba(35,24,66,.30), 0 3px 1px rgba(9,22,38,.26),
+    0 6px 2px rgba(9,22,38,.18), 0 26px 54px -18px rgba(9,22,38,.50);
+  animation:fmIn .8s cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes fmIn{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:none}}
+.fm-glass::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:2px;pointer-events:none; z-index:8;
+  background:linear-gradient(150deg, rgba(255,248,214,.98) 0%, rgba(180,210,255,.46) 14%, rgba(201,162,39,.40) 30%, rgba(255,255,255,.06) 50%, rgba(255,200,220,.24) 72%, rgba(255,244,200,.60) 100%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite:xor;
+          mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite:exclude;}
+.fm-glass::after{
+  content:'';position:absolute;left:0;top:0; width:var(--spec-size, 220px); height:var(--spec-size, 220px); border-radius:50%;z-index:6;
+  transform:translate3d(calc(var(--mx, 0px) - 50%), calc(var(--my, 0px) - 50%), 0);
+  background:radial-gradient(closest-side, rgba(255,255,255,.9) 0%, rgba(255,255,255,.4) 30%, rgba(255,255,255,.1) 60%, rgba(255,255,255,0) 100%);
+  mix-blend-mode:screen;filter:blur(2px);pointer-events:none; opacity:var(--spec-opacity, 0); transition: opacity 0.1s ease-out;
+}
+.fm-refract{position:absolute;inset:0;border-radius:inherit;z-index:1;pointer-events:none;
+  -webkit-backdrop-filter:url(#fm-lens) blur(1px) saturate(1.7); backdrop-filter:url(#fm-lens) blur(1px) saturate(1.7);
+  -webkit-mask:radial-gradient(130% 110% at 50% 45%, transparent 52%, #000 84%); mask:radial-gradient(130% 110% at 50% 45%, transparent 52%, #000 84%);}
+.fm-tint{position:absolute;inset:0;border-radius:inherit;z-index:2;pointer-events:none; background:rgba(var(--read-rgb), var(--read-fill));transition:background .35s, color .35s}
+.fm-glass[data-read="clear"]{--read-fill:0; --txt:#2b2440; --txt-dim:rgba(43,36,64,.62); --accent:#0a7fc2;}
+.fm-glass[data-read="milk"] {--read-fill:.30;--read-rgb:248,247,234; --txt:#2b2440; --txt-dim:rgba(43,36,64,.62); --accent:#0a7fc2;}
+.fm-glass[data-read="dark"] {--read-fill:.44;--read-rgb:22,16,34; --txt:#f3e9d6; --txt-dim:rgba(243,233,214,.62); --accent:#ffd98c;}
+.fm-glass[data-read="scrim"]{--read-fill:.16;--read-rgb:248,247,234}
+.fm-inner{position:absolute;inset:4px;border-radius:1px;z-index:3;pointer-events:none;
+  box-shadow:inset 0 2px 6px rgba(255,255,255,.45), inset 0 -3px 9px rgba(40,30,70,.22), inset 0 0 0 1px rgba(255,255,255,.12)}
+.fm-grain{position:absolute;inset:0;border-radius:inherit;z-index:4;pointer-events:none;opacity:.15; mix-blend-mode:overlay;background-size:140px 140px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E")}
+.fm-streak{position:absolute;top:-20%;bottom:-20%;left:0;width:34%;z-index:5;pointer-events:none;
+  background:linear-gradient(105deg, transparent 0%, rgba(255,255,255,0) 35%, rgba(255,255,255,.30) 50%, rgba(255,255,255,0) 65%, transparent 100%);
+  mix-blend-mode:screen;filter:blur(6px);opacity:0; animation:fmStreak 9s ease-in-out infinite}
+@keyframes fmStreak{0%,48%{transform:translateX(-170%) skewX(-12deg);opacity:0} 58%{opacity:.9} 76%{transform:translateX(360%) skewX(-12deg);opacity:.9} 86%,100%{transform:translateX(360%) skewX(-12deg);opacity:0}}
+
+.panel-head{padding:16px 16px 10px;position:relative;z-index:7;}
+.panel-title{font-family:'Roboto Slab',serif;font-weight:900;font-size:16px;color:var(--txt);}
+.panel-sub{font-size:11px;color:var(--txt-dim);margin-top:2px;}
+.fm-glass-in{position:relative;z-index:7;flex:1 1 auto;min-height:0;overflow:hidden; padding:0 16px; 
+  -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 12px,#000 calc(100% - 18px),transparent); mask-image:linear-gradient(180deg,transparent 0,#000 12px,#000 calc(100% - 18px),transparent);
+}
+
+#stats { top: 16px; left: 50%; transform: translateX(-50%); width: auto; height: auto; border-radius: 4px; --spec-size: 140px; }
+.stats-content { position: relative; z-index: 7; padding: 10px 18px; font-size: 12px; font-weight: 700; color: var(--txt); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+#fmGlass { top: 16px; right: 16px; bottom: 16px; width: min(340px,88vw); border-radius: 4px; }
+#fmGlassLeftTop { top: 16px; left: 16px; bottom: calc(50% + 8px); width: min(340px,88vw); border-radius: 4px; }
+#fmGlassLeftBottom { bottom: 16px; left: 16px; top: calc(50% + 8px); width: min(340px,88vw); border-radius: 4px; }
+
+.section-header{font-family:'Roboto Slab',serif;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:1.4px;color:var(--txt-dim);margin:15px 0 8px;display:flex;align-items:center;gap:8px;}
+.section-header::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(var(--read-rgb),.3),transparent);}
+.control-group{margin-bottom:11px;position:relative;z-index:7;}
+.control-group label{display:flex;justify-content:space-between;font-size:12px;font-weight:700;margin-bottom:5px;color:var(--txt);align-items:center;}
+.control-group label b{color:var(--accent);font-weight:800;font-variant-numeric:tabular-nums; transition: color 0.3s, text-shadow 0.3s;}
+.control-group:hover label b { text-shadow: 0 0 8px var(--accent); }
+
+input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:4px; border-radius:2px; background: rgba(255, 255, 255, 0.2); outline:none; cursor:pointer; transition: background 0.25s ease, box-shadow 0.25s ease; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);} 
+input[type=range]:hover { background: rgba(255, 255, 255, 0.4); box-shadow: inset 0 1px 2px rgba(0,0,0,0.2), 0 0 8px rgba(10, 127, 194, 0.3); }
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; appearance:none; width:16px; height:16px; border-radius:50%;
+  background: linear-gradient(135deg, rgba(255,255,255,0.5), rgba(255,255,255,0.1));
+  border: 1px solid rgba(255,255,255,0.4); cursor:grab; 
+  transition: background 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, transform 0.15s ease;
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.6), inset 0 -1px 1px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.1);
+}
+input[type=range]::-webkit-slider-thumb:hover{
+  background: linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0.2));
+  border-color: var(--accent);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.8), 0 0 8px rgba(10, 127, 194, 0.3);
+}
+input[type=range]::-webkit-slider-thumb:active{
+  cursor:grabbing; transform: scale(1.3);
+  background: radial-gradient(circle at 30% 30%, #ffffff, var(--accent) 80%);
+  border: 1px solid rgba(255,255,255,0.9);
+  box-shadow: 0 0 12px var(--accent), 0 0 20px rgba(10, 127, 194, 0.6);
+}
+input[type=range]::-moz-range-thumb {
+  width:16px; height:16px; border-radius:50%;
+  background: linear-gradient(135deg, rgba(255,255,255,0.5), rgba(255,255,255,0.1));
+  border: 1px solid rgba(255,255,255,0.4);
+  cursor:grab; transition: background 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, transform 0.15s ease;
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.6), inset 0 -1px 1px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.1);
+}
+input[type=range]::-moz-range-thumb:hover {
+  background: linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0.2));
+  border-color: var(--accent);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.8), 0 0 8px rgba(10, 127, 194, 0.3);
+}
+input[type=range]::-moz-range-thumb:active {
+  transform: scale(1.3);
+  background: radial-gradient(circle at 30% 30%, #ffffff, var(--accent) 80%);
+  border: 1px solid rgba(255,255,255,0.9);
+  box-shadow: 0 0 12px var(--accent), 0 0 20px rgba(10, 127, 194, 0.6);
+}
+input[type=range]:disabled{opacity:0.4;cursor:not-allowed;}
+
+.text-input {
+    width: 100%; padding: 10px 12px; border-radius: 8px; background: rgba(var(--read-rgb), 0.15); color: var(--txt);
+    border: 1px solid rgba(var(--read-rgb), 0.3); outline: none; font-family: 'Nunito', sans-serif;
+    font-weight: 700; font-size: 14px; transition: all 0.25s ease; box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+}
+.text-input:focus {
+    border-color: var(--accent); box-shadow: 0 0 12px -2px var(--accent), inset 0 1px 2px rgba(0,0,0,0.05); background-color: rgba(var(--read-rgb), 0.25);
+}
+
+.action-btn {
+    width: 100%; padding: 12px; border-radius: 8px;
+    background: linear-gradient(180deg, rgba(10, 127, 194, 0.3), rgba(10, 127, 194, 0.1));
+    border: 1px solid var(--accent); color: var(--accent); font-family: 'Nunito', sans-serif;
+    font-weight: 800; font-size: 13px; cursor: pointer; transition: all 0.25s ease;
+    text-transform: uppercase; letter-spacing: 1px; margin-top: 5px; text-align: center; position: relative; overflow: hidden;
+}
+.action-btn:hover { background: linear-gradient(180deg, rgba(10, 127, 194, 0.5), rgba(10, 127, 194, 0.2)); box-shadow: 0 0 15px -2px var(--accent); transform: translateY(-1px); }
+.action-btn:active { transform: translateY(0); }
+.action-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+.action-btn.danger { border-color: #ff4d4d; color: #ff4d4d; background: linear-gradient(180deg, rgba(255, 50, 50, 0.2), rgba(255, 50, 50, 0.05)); margin-top: 8px; }
+.action-btn.danger:hover { background: linear-gradient(180deg, rgba(255, 50, 50, 0.4), rgba(255, 50, 50, 0.1)); box-shadow: 0 0 15px -2px #ff4d4d; }
+
+select{ width:100%; padding:10px 35px 10px 12px; border-radius:8px; background:rgba(var(--read-rgb), 0.15); color:var(--txt); border:1px solid rgba(var(--read-rgb), 0.3); outline:none; cursor:pointer; margin-bottom:8px; position:relative; z-index:7; appearance: none; -webkit-appearance: none; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 12px; background-image: url("data:image/svg+xml;utf8,<svg fill='%230a7fc2' height='16' viewBox='0 0 24 24' width='16' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/></svg>"); background-repeat: no-repeat; background-position: right 12px center; transition: all 0.25s ease; box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);} 
+select:hover { border-color: var(--accent); box-shadow: 0 0 12px -2px var(--accent), inset 0 1px 2px rgba(0,0,0,0.05); background-color: rgba(var(--read-rgb), 0.25);}
+select option { background-color: #f8f8ff; color: #2b2440; padding: 8px; font-weight: 600;}
+
+.mode-switcher{display:flex;gap:10px;margin-bottom:8px;background:rgba(var(--read-rgb),.2);padding:5px;border-radius:4px;position:relative;z-index:7;} 
+.mode-btn { position: relative; overflow: hidden; padding: 9px; border-radius: 4px; background:rgba(var(--read-rgb),.1); border:1px solid rgba(var(--read-rgb),.3); color:var(--txt); cursor:pointer; font-weight:700; margin-bottom:8px; text-align:center; transition: all 0.25s ease; display:flex; justify-content:center; align-items:center; flex:1; font-size:0.85rem;}
+.mode-btn::after { content: ''; position: absolute; top: 0; left: -150%; width: 50%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent); transform: skewX(-20deg); transition: left 0.6s ease-in-out; pointer-events: none; mix-blend-mode: screen;}
+.mode-btn:hover::after { left: 150%; }
+.mode-btn:hover { background: rgba(var(--read-rgb),0.2); transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,0.1); border-color: var(--accent);}
+.mode-btn.active{ background:linear-gradient(180deg,rgba(143,216,255,.34),rgba(143,216,255,.12)); border-color:var(--accent);color:var(--accent); box-shadow:0 0 14px -4px var(--accent), inset 0 1px 0 rgba(255,255,255,0.4); text-shadow: 0 0 8px rgba(10, 127, 194, 0.5);}
+
+.toggle-switch { width: 42px; height: 24px; background: rgba(var(--read-rgb),0.2); border-radius: 12px; position: relative; cursor: pointer; transition: all 0.25s ease; border: 1px solid rgba(var(--read-rgb),.3); flex-shrink: 0;}
+.toggle-switch:hover { border-color: var(--accent); box-shadow: 0 0 12px -2px var(--accent); transform: scale(1.05);}
+.toggle-switch.active { background: linear-gradient(180deg,rgba(143,216,255,.34),rgba(143,216,255,.12)); border-color: var(--accent); box-shadow: 0 0 14px -4px var(--accent);}
+.toggle-switch::after { content: ''; position: absolute; top: 1px; left: 1px; width: 20px; height: 20px; background: #fff; border-radius: 50%; transition: all 0.25s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.2);} 
+.toggle-switch:hover::after { box-shadow: 0 2px 8px rgba(255,255,255,0.8); }
+.toggle-switch.active::after { transform: translateX(18px); background: var(--accent); box-shadow: 0 0 10px var(--accent);}
+
+input[type=color] { width: 40px; height: 20px; border: 1px solid rgba(var(--read-rgb),.3); border-radius: 4px; background: transparent; cursor: pointer; padding: 0; transition: all 0.25s ease; }
+input[type=color]:hover { transform: scale(1.1); box-shadow: 0 0 10px -2px var(--accent); border-color: var(--accent); }
+input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+input[type=color]::-webkit-color-swatch { border: none; border-radius: 2px; }
+
+.hint{opacity:.55;font-size:.72rem;margin:4px 0 0;color:var(--txt-dim);}
+#loading-screen{position:absolute;inset:0;background:#000;display:flex;justify-content:center;align-items:center;z-index:100;transition:opacity .5s;color:#fff;}
+
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){ .fm-glass{background:linear-gradient(155deg,rgba(248,247,234,.82),rgba(248,247,234,.66))} }
+
+.svg-editor { background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(var(--read-rgb), 0.2); margin-bottom: 10px; width: 100%; aspect-ratio: 3 / 2; max-height: 220px; touch-action: none; }
+.svg-editor path { fill: none; stroke-width: 2; pointer-events: none; transition: stroke 0.2s ease; }
+.svg-editor circle { fill: #fff; stroke: var(--accent); stroke-width: 2; cursor: grab; transition: r 0.2s, fill 0.2s, stroke 0.2s; pointer-events: all; }
+.svg-editor circle:hover { r: 8; }
+.svg-editor circle.dragging { r: 9; }
+.svg-editor text { font-family: 'Nunito', sans-serif; font-size: 12px; font-weight: 900; pointer-events: none; user-select: none; }
+
+.custom-scrollbar { position: absolute; top: 12px; right: 2px; width: 8px; bottom: 18px; z-index: 50; opacity: 0; transition: opacity 0.3s; pointer-events: auto; border-radius: 4px; }
+.custom-scrollbar.visible, .custom-scrollbar:hover { opacity: 1; }
+.custom-scrollbar-thumb { width: 100%; background: rgba(var(--read-rgb), 0.25); border-radius: 4px; cursor: grab; transition: background 0.2s ease; border: 1px solid transparent; min-height: 30px; }
+.custom-scrollbar-thumb:hover { background: rgba(var(--read-rgb), 0.4); }
+.custom-scrollbar-thumb:active { cursor: grabbing; background: rgba(var(--read-rgb), 0.6); }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="fm-lens">
+    <feTurbulence type="fractalNoise" baseFrequency="0.006" numOctaves="2" seed="7" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="9" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+
+<div id="canvas-container"></div>
+<div id="loading-screen"><h1>Загрузка физики, волн и неба…</h1></div>
+<div id="root"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.0/build/index.module.js",
+    "three-bvh-csg": "https://cdn.jsdelivr.net/npm/three-bvh-csg@0.0.16/build/index.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+
+import { MeshBVH, computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
+
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
+
+// Инициализация CSG Вычислителя
+const csgEvaluator = new Evaluator();
+
+const BASE_URL = 'https://raw.githubusercontent.com/YoungPirate-cyber/models-glb/main/textures/';
+const MARBLE_BASE = BASE_URL + 'marbles/calacatta_viola_marble_tgglddvc_2k/';
+const SHIP_URL = 'https://raw.githubusercontent.com/YoungPirate-cyber/models-glb/main/Trirema.glb';
+const FONT_URL = 'https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json';
+
+const hdriPresets = {
+  kloofendal:        { url: BASE_URL + 'hdri/kloofendal_48d_partly_cloudy_2k.hdr',                 sunDir: new THREE.Vector3(0.5, 0.8, 0.5),  exposure: 1.0 },
+  kloofendal_puresky:{ url: BASE_URL + 'hdri/kloofendal_48d_partly_cloudy_puresky_2k.hdr',         sunDir: new THREE.Vector3(0.5, 0.8, 0.5),  exposure: 1.0 },
+  qwantani:          { url: BASE_URL + 'hdri/qwantani_sunrise_puresky_2k.hdr',                     sunDir: new THREE.Vector3(0.8, 0.15, 0.5), exposure: 0.85 }
+};
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 1000);
+camera.position.set(5, 3, 5);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+const initialW = Math.max(1, innerWidth);
+const initialH = Math.max(1, innerHeight);
+renderer.setSize(initialW, initialH);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.target.set(0.5, 1.5, 0);
+
+const loadingManager = new THREE.LoadingManager();
+const textureLoader = new THREE.TextureLoader(loadingManager);
+const hdrLoader = new RGBELoader(loadingManager);
+const gltfLoader = new GLTFLoader(loadingManager);
+const fontLoader = new FontLoader(loadingManager);
+
+loadingManager.onLoad = () => {
+  const ls = document.getElementById('loading-screen');
+  ls.style.opacity = '0';
+  setTimeout(() => ls.style.display = 'none', 500);
+};
+
+const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
+const loadTex = (url) => { const t = textureLoader.load(url); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = maxAnisotropy; return t; };
+
+const mTex = {
+  color:     loadTex(MARBLE_BASE + 'Calacatta_Viola_Marble_tgglddvc_2K_BaseColor.jpg'),
+  normal:    loadTex(MARBLE_BASE + 'Calacatta_Viola_Marble_tgglddvc_2K_Normal.jpg'),
+  roughness: loadTex(MARBLE_BASE + 'Calacatta_Viola_Marble_tgglddvc_2K_Roughness.jpg'),
+  gloss:     loadTex(MARBLE_BASE + 'Calacatta_Viola_Marble_tgglddvc_2K_Gloss.jpg'),
+  cavity:    loadTex(MARBLE_BASE + 'Calacatta_Viola_Marble_tgglddvc_2K_Cavity.jpg'),
+  specular:  loadTex(MARBLE_BASE + 'Calacatta_Viola_Marble_tgglddvc_2K_Specular.jpg'),
+};
+mTex.color.colorSpace = THREE.SRGBColorSpace;
+
+const cubeUniforms = {
+    uHoverNormal: { value: new THREE.Vector3() },
+    uHoverActive: { value: 0 },
+    uSelectedNormal: { value: new THREE.Vector3() },
+    uSelectedActive: { value: 0 },
+    uEngraveFlash: { value: 0 }
+};
+
+function applyTriplanar(material, tex, scale = 1.0) {
+    material.map = null; material.normalMap = null; material.roughnessMap = null;
+    material.aoMap = null; material.specularIntensityMap = null; material.needsUpdate = true;
+    material.onBeforeCompile = (shader) => {
+        shader.uniforms.triplanarMap = { value: tex.color };
+        shader.uniforms.triplanarNormal = { value: tex.normal };
+        shader.uniforms.triplanarRoughness = { value: tex.roughness };
+        shader.uniforms.triplanarScale = { value: scale };
+        material.userData.shader = shader;
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', `#include <common>
+varying vec3 vTriPos;
+varying vec3 vTriNormal;`)
+            .replace('#include <begin_vertex>', `#include <begin_vertex>
+vTriPos = (modelMatrix * vec4(position, 1.0)).xyz;
+vTriNormal = normalize(mat3(modelMatrix) * normal);`);
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', `#include <common>
+uniform sampler2D triplanarMap;
+uniform sampler2D triplanarNormal;
+uniform sampler2D triplanarRoughness;
+uniform float triplanarScale;
+varying vec3 vTriPos;
+varying vec3 vTriNormal;
+vec3 triplanarBlend(vec3 normal) { vec3 blend = abs(normal); blend = normalize(max(blend, 0.00001)); blend /= (blend.x + blend.y + blend.z); return blend; }
+vec4 triplanarTexture(sampler2D tex, vec3 pos, vec3 normal, float scale) { vec3 blend = triplanarBlend(normal); vec4 cx = texture2D(tex, pos.yz * scale); vec4 cy = texture2D(tex, pos.xz * scale); vec4 cz = texture2D(tex, pos.xy * scale); return (cx * blend.x + cy * blend.y + cz * blend.z); }`)
+            .replace('#include <map_fragment>', `
+vec4 sampledDiffuseColor = triplanarTexture(triplanarMap, vTriPos, vTriNormal, triplanarScale);
+diffuseColor *= sampledDiffuseColor;
+`)
+            .replace('#include <roughnessmap_fragment>', `
+float roughnessFactor = triplanarTexture(triplanarRoughness, vTriPos, vTriNormal, triplanarScale).g;
+roughnessFactor *= roughness;
+`)
+            .replace('#include <normal_fragment_maps>', `
+vec3 sampledNormal = triplanarTexture(triplanarNormal, vTriPos, vTriNormal, triplanarScale).xyz * 2.0 - 1.0;
+vec3 N = normalize(vTriNormal);
+vec3 T = abs(N.y) < 0.999 ? normalize(cross(vec3(0.0, 1.0, 0.0), N)) : normalize(cross(vec3(1.0, 0.0, 0.0), N));
+vec3 B = normalize(cross(N, T));
+normal = normalize(mat3(T, B, N) * sampledNormal);
+`);
+    };
+}
+
+function applyProceduralMarble(material, scale = 1.0, intensity = 1.0, veinThick = 0.2, isLocal = false) {
+    material.onBeforeCompile = (shader) => {
+        shader.uniforms.uProcScale = { value: scale };
+        shader.uniforms.uProcVeinInt = { value: intensity };
+        shader.uniforms.uVeinThick = { value: veinThick };
+        material.userData.shader = shader;
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', `#include <common>
+varying vec3 vProcPos;
+varying vec3 vProcNormal;`)
+            .replace('#include <begin_vertex>', `#include <begin_vertex>
+vProcPos = ${isLocal ? 'position' : '(modelMatrix * vec4(position, 1.0)).xyz'};
+vProcNormal = normalize(${isLocal ? 'normal' : 'mat3(modelMatrix) * normal'});`);
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', `#include <common>
+uniform float uProcScale;
+uniform float uProcVeinInt;
+uniform float uVeinThick;
+varying vec3 vProcPos;
+varying vec3 vProcNormal;
+float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float noise(vec3 x) { vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(mix(mix(hash(i + vec3(0,0,0)), hash(i + vec3(1,0,0)), f.x), mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y), mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x), mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z); }
+float fbm(vec3 p) { float v = 0.0; float a = 0.5; for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.0; a *= 0.5; } return v; }`)
+            .replace('#include <map_fragment>', `
+vec3 pos = vProcPos * 0.5 * uProcScale;
+float n = fbm(pos * 2.0);
+float veins = abs(sin((pos.x + pos.y * 0.5 + n * 2.0) * 3.1415 * 2.0));
+veins = smoothstep(1.0 - uVeinThick, 1.0 - uVeinThick + 0.05, 1.0 - veins);
+vec3 milkColor = vec3(0.95, 0.95, 0.9);
+vec3 goldColor = vec3(1.0, 0.71, 0.2);
+vec3 finalColor = mix(milkColor, goldColor, veins * uProcVeinInt);
+diffuseColor.rgb *= finalColor;
+`)
+            .replace('#include <roughnessmap_fragment>', `
+float roughnessFactor = 0.1 + 0.4 * fbm(vProcPos * 1.0);
+roughnessFactor *= roughness;
+`);
+    };
+}
+
+function applyFDMMaterial(material, layerHeight = 0.08, strength = 0.4, axis = 1) {
+    material.onBeforeCompile = (shader) => {
+        shader.uniforms.uFDMLayerHeight = { value: layerHeight };
+        shader.uniforms.uFDMBumpStrength = { value: strength };
+        shader.uniforms.uFDMAxis = { value: axis };
+        shader.uniforms.uFDMColor = { value: new THREE.Color(0xebe2c7) }; 
+        material.userData.shader = shader;
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', `#include <common>
+varying vec3 vFDMPos;
+varying mat3 vFDMWorldMat;`)
+            .replace('#include <begin_vertex>', `#include <begin_vertex>
+vFDMPos = position;
+vFDMWorldMat = mat3(modelMatrix);`);
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', `#include <common>
+uniform float uFDMLayerHeight;
+uniform float uFDMBumpStrength;
+uniform int uFDMAxis;
+uniform vec3 uFDMColor;
+varying vec3 vFDMPos;
+varying mat3 vFDMWorldMat;
+float fdm_lineShade = 1.0;
+float getFDMAxis(vec3 p, int axis) { if(axis == 0) return p.x; if(axis == 1) return p.y; return p.z; }
+vec3 getFDMAxisVec(int axis) { if(axis == 0) return vec3(1.0, 0.0, 0.0); if(axis == 1) return vec3(0.0, 1.0, 0.0); return vec3(0.0, 0.0, 1.0); }`)
+            .replace('#include <map_fragment>', `
+float coord = getFDMAxis(vFDMPos, uFDMAxis);
+float layerFrac = fract(coord / max(uFDMLayerHeight, 0.0000001));
+float layerIndex = floor(coord / max(uFDMLayerHeight, 0.0000001));
+vec3 baseColor = uFDMColor;
+float colorVar = fract(sin(layerIndex * 12.9898) * 43758.5453) * 0.04 - 0.02;
+vec3 fdmColor = baseColor + vec3(colorVar);
+fdm_lineShade = smoothstep(0.0, 0.15, layerFrac) * (1.0 - smoothstep(0.85, 1.0, layerFrac));
+fdmColor *= mix(0.92, 1.0, fdm_lineShade);
+diffuseColor.rgb *= fdmColor;
+`)
+            .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+float seamProximity = min(layerFrac, 1.0 - layerFrac);
+float bumpAmount = smoothstep(0.5, 0.0, seamProximity);
+vec3 localAxis = getFDMAxisVec(uFDMAxis);
+vec3 worldAxis = normalize(vFDMWorldMat * localAxis);
+vec3 tangent = cross(normal, worldAxis);
+float tangentLen = length(tangent);
+if (tangentLen > 0.01) { tangent /= tangentLen; normal = normalize(mix(normal, tangent, bumpAmount * uFDMBumpStrength * 0.5)); }
+`)
+            .replace('#include <roughnessmap_fragment>', `
+float roughnessFactor = 0.6 + 0.2 * (1.0 - fdm_lineShade);
+roughnessFactor *= roughness;
+`);
+    };
+}
+
+const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
+cubeGeo.setAttribute('uv2', cubeGeo.attributes.uv);
+cubeGeo.computeBoundsTree(); 
+const originalCubeGeo = cubeGeo.clone(); // Сохраняем для сброса
+
+const cubeMat = new THREE.MeshPhysicalMaterial({ map: mTex.color, normalMap: mTex.normal, roughnessMap: mTex.roughness, aoMap: mTex.cavity, specularIntensityMap: mTex.specular, specularColor: new THREE.Color(0xffffff), roughness: 0.2, metalness: 0.0, clearcoat: 1.0, clearcoatRoughness: 0.1, transmission: 0.1, thickness: 2.0, ior: 1.5, envMapIntensity: 1.0 });
+
+cubeMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uHoverNormal = cubeUniforms.uHoverNormal;
+    shader.uniforms.uHoverActive = cubeUniforms.uHoverActive;
+    shader.uniforms.uSelectedNormal = cubeUniforms.uSelectedNormal;
+    shader.uniforms.uSelectedActive = cubeUniforms.uSelectedActive;
+    shader.uniforms.uEngraveFlash = cubeUniforms.uEngraveFlash;
+    
+    shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>
+            varying vec3 vWorldNormal;
+        `)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+            vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        `);
+        
+    shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>
+            varying vec3 vWorldNormal;
+            uniform vec3 uHoverNormal;
+            uniform float uHoverActive;
+            uniform vec3 uSelectedNormal;
+            uniform float uSelectedActive;
+            uniform float uEngraveFlash;
+        `)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+            float hoverMatch = pow(max(dot(normalize(vWorldNormal), normalize(uHoverNormal)), 0.0), 12.0);
+            float selectedMatch = pow(max(dot(normalize(vWorldNormal), normalize(uSelectedNormal)), 0.0), 12.0);
+            
+            vec3 hoverColor = vec3(0.04, 0.5, 0.76); 
+            vec3 selectedColor = vec3(0.0, 1.0, 0.0); 
+            vec3 flashColor = vec3(1.0, 0.4, 0.0); 
+            
+            vec3 highlightCol = hoverColor * hoverMatch * uHoverActive;
+            vec3 selectCol = selectedColor * selectedMatch * uSelectedActive;
+            vec3 flashCol = flashColor * uEngraveFlash * selectedMatch;
+            
+            totalEmissiveRadiance += highlightCol + selectCol + flashCol;
+        `);
+};
+const cube = new THREE.Mesh(cubeGeo, cubeMat);
+cube.position.y = 1.0; scene.add(cube);
+
+let engravingFont = null;
+let previewTextMesh = null;
+
+window.UI_STATE = window.UI_STATE || { engravingText: "", engraveSize: 0.25, engraveDepth: 0.5 };
+
+let selectedIntersection = { 
+    point: new THREE.Vector3(0, 0, 0.5), 
+    normal: new THREE.Vector3(0, 0, 1), 
+    localNormal: new THREE.Vector3(0, 0, 1) 
+};
+cubeUniforms.uSelectedNormal.value.copy(selectedIntersection.normal);
+cubeUniforms.uSelectedActive.value = 1.0;
+
+// === ЛОГИКА ПРЕДПРОСМОТРА ГРАВИРОВКИ ===
+window.updateEngravePreview = () => {
+    if (previewTextMesh) {
+        cube.remove(previewTextMesh);
+        previewTextMesh.geometry.dispose();
+        previewTextMesh.material.dispose();
+        previewTextMesh = null;
+    }
+    
+    const text = window.UI_STATE.engravingText || "";
+    if (!engravingFont || text.trim() === "") return;
+
+    try {
+        const localNormal = selectedIntersection.localNormal.clone();
+        const localFaceCenter = localNormal.clone().multiplyScalar(0.5);
+        
+        const s = ui.cubeScale || 1.0;
+        const size = (window.UI_STATE.engraveSize || 0.25) * s;
+        const depth = Math.max(0.05, Math.min(0.4, (window.UI_STATE.engraveDepth || 0.5) * s));
+
+        const textGeo = new TextGeometry(text, {
+            font: engravingFont,
+            size: size,
+            depth: depth,
+            height: depth,
+            curveSegments: 4,
+            bevelEnabled: false 
+        });
+        
+        textGeo.center();
+        textGeo.translate(0, 0, -depth / 2);
+        
+        textGeo.computeBoundingBox();
+        
+        const textWidth = textGeo.boundingBox.max.x - textGeo.boundingBox.min.x;
+        const textHeight = textGeo.boundingBox.max.y - textGeo.boundingBox.min.y;
+        const maxSize = 0.8 * s; 
+        
+        const scaleX = textWidth > maxSize ? maxSize / textWidth : 1;
+        const scaleY = textHeight > maxSize ? maxSize / textHeight : 1;
+        const scaleXY = Math.min(scaleX, scaleY);
+        
+        textGeo.scale(scaleXY, scaleXY, 1);
+        textGeo.computeVertexNormals();
+
+        const tempMat = new THREE.MeshStandardMaterial({ 
+            color: 0xff2200, 
+            emissive: 0xff5500, 
+            emissiveIntensity: 1.5, 
+            transparent: true, 
+            opacity: 0.7, 
+            side: THREE.DoubleSide,
+            depthTest: false 
+        });
+        previewTextMesh = new THREE.Mesh(textGeo, tempMat);
+        previewTextMesh.renderOrder = 999; 
+        
+        // Пункт 3: Микро-отступ 0.01 наружу для избежания Z-Fighting
+        const localTextPos = localFaceCenter.clone().add(localNormal.clone().multiplyScalar(0.01));
+        previewTextMesh.position.copy(localTextPos);
+        
+        previewTextMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), localNormal);
+        
+        cube.add(previewTextMesh);
+    } catch(e) {
+        console.error("Preview Error:", e);
+    }
+};
+
+// === ЛОГИКА CSG (ВЫГРАВИРОВКА) ===
+window.triggerManualCSG = () => {
+    return new Promise((resolve, reject) => {
+        if (!previewTextMesh || !previewTextMesh.visible) return reject("Нет активного текста для вырезания");
+        
+        try {
+            // 1. Клонируем геометрии куба и текста
+            const cGeo = cube.geometry.clone();
+            const tGeo = previewTextMesh.geometry.clone();
+            
+            // 2. Запекаем мировые матрицы (Пункт 2)
+            cube.updateMatrixWorld(true);
+            cGeo.applyMatrix4(cube.matrixWorld);
+            
+            previewTextMesh.updateMatrixWorld(true);
+            tGeo.applyMatrix4(previewTextMesh.matrixWorld);
+            
+            // 3. СИНХРОНИЗАЦИЯ АТРИБУТОВ (Пункт 1)
+            const prepareGeo = (geo) => {
+                if (!geo.attributes.normal) geo.computeVertexNormals();
+                if (!geo.attributes.uv) geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
+                if (!geo.attributes.uv2) geo.setAttribute('uv2', new THREE.BufferAttribute(geo.attributes.uv.array.slice(0), 2));
+            };
+            prepareGeo(cGeo);
+            prepareGeo(tGeo);
+            
+            // 4. МАСШТАБИРОВАНИЕ ДЛЯ ТОЧНОСТИ (Пункт 4)
+            const SCALE_FIX = 1000;
+            cGeo.scale(SCALE_FIX, SCALE_FIX, SCALE_FIX);
+            tGeo.scale(SCALE_FIX, SCALE_FIX, SCALE_FIX);
+            
+            cGeo.computeBoundsTree();
+            tGeo.computeBoundsTree();
+            
+            const brush1 = new Brush(cGeo, new THREE.MeshBasicMaterial());
+            brush1.matrix.identity();
+            brush1.updateMatrixWorld();
+            
+            const brush2 = new Brush(tGeo, new THREE.MeshBasicMaterial());
+            brush2.matrix.identity();
+            brush2.updateMatrixWorld();
+            
+            const result = csgEvaluator.evaluate(brush1, brush2, SUBTRACTION);
+            
+            result.geometry.scale(1 / SCALE_FIX, 1 / SCALE_FIX, 1 / SCALE_FIX);
+            
+            const inv = new THREE.Matrix4().copy(cube.matrixWorld).invert();
+            result.geometry.applyMatrix4(inv);
+            
+            if (!result.geometry.attributes.uv2 && result.geometry.attributes.uv) {
+                result.geometry.setAttribute('uv2', new THREE.BufferAttribute(result.geometry.attributes.uv.array, 2));
+            }
+            result.geometry.computeVertexNormals();
+            result.geometry.computeBoundsTree();
+            
+            if (cube.geometry.boundsTree) cube.geometry.disposeBoundsTree();
+            cube.geometry.dispose();
+            cube.geometry = result.geometry;
+            
+            previewTextMesh.visible = false;
+            resolve();
+        } catch(e) {
+            console.error("CSG Error:", e);
+            reject("Ошибка CSG: " + e.message);
+        }
+    });
+};
+
+// === СБРОС КУБА ===
+window.resetCubeGeometry = () => {
+    if (cube.geometry.boundsTree) cube.geometry.disposeBoundsTree();
+    cube.geometry.dispose();
+    cube.geometry = originalCubeGeo.clone();
+    cube.geometry.computeBoundsTree();
+    if (previewTextMesh) previewTextMesh.visible = true;
+};
+
+// === ЛОГИКА ТЕСТОВОГО ТЕКСТА ===
+let testTextMesh = null;
+window.updateTestText = () => {
+    if (!engravingFont) return;
+    if (!ui.testText || ui.testText.trim() === "") {
+        if (testTextMesh) testTextMesh.visible = false;
+        return;
+    }
+    
+    const geo = new TextGeometry(ui.testText, {
+        font: engravingFont,
+        size: ui.testSize,
+        depth: ui.testDepth, 
+        height: ui.testDepth, 
+        curveSegments: 4,
+        bevelEnabled: false
+    });
+    geo.center();
+    geo.computeVertexNormals();
+    
+    if (testTextMesh) {
+        testTextMesh.geometry.dispose();
+        testTextMesh.geometry = geo;
+        testTextMesh.visible = true;
+    } else {
+        const mat = new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x004400, roughness: 0.4, metalness: 0.8 });
+        testTextMesh = new THREE.Mesh(geo, mat);
+        scene.add(testTextMesh);
+    }
+    
+    testTextMesh.position.set(ui.testPosX, ui.testPosY, ui.testPosZ);
+    testTextMesh.rotation.set(THREE.MathUtils.degToRad(ui.testRotX), THREE.MathUtils.degToRad(ui.testRotY), THREE.MathUtils.degToRad(ui.testRotZ));
+};
+
+fontLoader.load(FONT_URL, (font) => {
+    engravingFont = font;
+    if (window.updateTestText) window.updateTestText();
+    if (window.updateEngravePreview) window.updateEngravePreview();
+});
+
+window.onFaceSelected = null;
+
+const cylGeo = new THREE.CylinderGeometry(0.5, 0.5, 2, 64, 1);
+cylGeo.setAttribute('uv2', cylGeo.attributes.uv);
+const triplanarCylMat = new THREE.MeshPhysicalMaterial({ roughness: 0.2, metalness: 0.0, clearcoat: 1.0, clearcoatRoughness: 0.1, transmission: 0.1, thickness: 2.0, ior: 1.5, envMapIntensity: 1.0 });
+applyTriplanar(triplanarCylMat, mTex, 1.0);
+const triplanarCyl = new THREE.Mesh(cylGeo, triplanarCylMat);
+triplanarCyl.position.set(-2.0, 1.0, 0.0); scene.add(triplanarCyl);
+
+const procCylMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.2, clearcoat: 1.0, clearcoatRoughness: 0.1, metalness: 0.0 });
+applyProceduralMarble(procCylMat, 1.0, 1.0, 0.2);
+const procCyl = new THREE.Mesh(cylGeo, procCylMat);
+procCyl.position.set(-4.0, 1.0, 0.0); scene.add(procCyl);
+
+const targetCubeMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.1, transmission: 0.8, thickness: 0.5, transparent: true });
+const targetCube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), targetCubeMat);
+targetCube.position.set(-6.0, 1.0, 0.0); scene.add(targetCube);
+
+let latheMesh = null;
+const latheMat = new THREE.MeshPhysicalMaterial({ color: 0xe0e0e0, roughness: 0.2, clearcoat: 1.0, side: THREE.DoubleSide });
+
+function getBezierPoints(p0, p1, p2, p3, segments = 40) {
+    const points = [];
+    for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        const u = 1 - t;
+        const x = u*u*u * p0.x + 3*u*u*t * p1.x + 3*u*t*t * p2.x + t*t*t * p3.x;
+        const y = u*u*u * p0.y + 3*u*u*t * p1.y + 3*u*t*t * p2.y + t*t*t * p3.y;
+        points.push({ x, y });
+    }
+    return points;
+}
+
+window.updateLathe = (points, width = 1.0) => {
+    if (latheMesh) { scene.remove(latheMesh); latheMesh.geometry.dispose(); }
+    const bezierPts = getBezierPoints(points[0], points[1], points[2], points[3], 40);
+    const vec2Pts = bezierPts.map(p => new THREE.Vector2((p.x / 300) * width, (200 - p.y) / 100));
+    const geo = new THREE.LatheGeometry(vec2Pts, 64);
+    latheMesh = new THREE.Mesh(geo, latheMat);
+    latheMesh.position.set(-8.0, 0.0, 0.0);
+    scene.add(latheMesh);
+};
+window.updateLathe([{x: 30, y: 170}, {x: 120, y: 130}, {x: 60, y: 70}, {x: 90, y: 30}], 1.0);
+
+function createAcanthusGeometry(params) {
+    const { height, width, lobes, curl, thickness, spread, curlStart } = params;
+    const safeThickness = Math.max(0.01, thickness);
+    const safeHeight = Math.max(0.1, height);
+    const safeWidth = Math.max(0.01, width);
+    const safeLobes = Math.max(1, Math.floor(lobes));
+    const safeSpread = Math.max(0, spread);
+    const safeCurlStart = Math.max(0, Math.min(0.9, curlStart || 0));
+    
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    for (let i = 0; i < safeLobes; i++) {
+        const t_vert = (i + 1) / safeLobes;
+        const y_vert = t_vert * safeHeight;
+        const w_vert = Math.sin(t_vert * Math.PI) * safeWidth * (1 - t_vert * 0.3 + t_vert * safeSpread * 0.5);
+        const t_lobe = (i + 0.5) / safeLobes;
+        const y_lobe = t_lobe * safeHeight;
+        const w_lobe = Math.sin(t_lobe * Math.PI) * safeWidth * 1.2 * (1 + t_lobe * safeSpread * 0.5);
+        shape.quadraticCurveTo(w_lobe, y_lobe, w_vert, y_vert);
+    }
+    for (let i = safeLobes - 1; i >= 0; i--) {
+        const t_vert = i / safeLobes;
+        const y_vert = t_vert * safeHeight;
+        const w_vert = Math.sin(t_vert * Math.PI) * safeWidth * (1 - t_vert * 0.3 + t_vert * safeSpread * 0.5);
+        const t_lobe = (i + 0.5) / safeLobes;
+        const y_lobe = t_lobe * safeHeight;
+        const w_lobe = Math.sin(t_lobe * Math.PI) * safeWidth * 1.2 * (1 + t_lobe * safeSpread * 0.5);
+        shape.quadraticCurveTo(-w_lobe, y_lobe, -w_vert, y_vert);
+    }
+    shape.closePath();
+    
+    const extrudeSettings = { depth: safeThickness, bevelEnabled: true, bevelThickness: safeThickness * 0.5, bevelSize: safeThickness * 0.2, bevelSegments: 2 };
+    const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    geo.center();
+    
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+        let x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+        const h_raw = (y + safeHeight / 2) / safeHeight; 
+        let curlT = 0;
+        if (h_raw > safeCurlStart) { curlT = (h_raw - safeCurlStart) / (1.0 - safeCurlStart); }
+        const curlAmount = Math.pow(Math.max(0, Math.min(1, curlT)), 1.5) * curl * 2.0;
+        z += curlAmount * safeWidth * 0.5;
+        pos.setXYZ(i, x, y, z);
+    }
+    geo.computeVertexNormals();
+    return geo;
+}
+
+let capitalGroup = new THREE.Group();
+capitalGroup.position.set(-9.0, 1.5, 0.0);
+scene.add(capitalGroup);
+
+window.updateCapital = (params) => {
+    while(capitalGroup.children.length > 0) {
+        const child = capitalGroup.children[0];
+        capitalGroup.remove(child);
+        if (child.geometry) child.geometry.dispose();
+    }
+    const { leafHeight, leafWidth, lobes, curl, thickness, count, bellR1, bellR2, bellH, leafTilt, leafSpread, curlStart } = params;
+    const bellGeo = new THREE.CylinderGeometry(bellR2, bellR1, bellH, 32, 1, true);
+    const bellMat = new THREE.MeshPhysicalMaterial({ color: 0xeeeae0, roughness: 0.6, clearcoat: 0.2, side: THREE.DoubleSide });
+    const bell = new THREE.Mesh(bellGeo, bellMat);
+    bell.position.y = bellH / 2;
+    capitalGroup.add(bell);
+
+    const leafGeo = createAcanthusGeometry({ height: leafHeight, width: leafWidth, lobes, curl, thickness, spread: leafSpread, curlStart });
+    const leafMat = new THREE.MeshPhysicalMaterial({ color: 0xf2f0e8, roughness: 0.5, clearcoat: 0.4, side: THREE.DoubleSide });
+
+    for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2;
+        const leaf = new THREE.Mesh(leafGeo, leafMat);
+        const r = bellR1 * 0.9;
+        leaf.position.set(Math.cos(angle) * r, 0.1, Math.sin(angle) * r);
+        leaf.rotation.y = Math.PI / 2 - angle;
+        leaf.rotation.z = THREE.MathUtils.degToRad(leafTilt || 0); 
+        capitalGroup.add(leaf);
+    }
+};
+window.updateCapital({ leafHeight: 1.5, leafWidth: 0.4, lobes: 6, curl: 0.5, thickness: 0.05, count: 8, bellR1: 0.6, bellR2: 0.8, bellH: 1.2, leafTilt: 0, leafSpread: 0, curlStart: 0.3 });
+
+const focusSphereRadius = 0.125;
+const focusSphereGeo = new THREE.SphereGeometry(focusSphereRadius, 32, 32);
+const focusSphereMat = new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.5 });
+const focusSphere = new THREE.Mesh(focusSphereGeo, focusSphereMat);
+focusSphere.visible = false; scene.add(focusSphere);
+const focusGlowGeo = new THREE.SphereGeometry(focusSphereRadius * 2, 32, 32);
+const focusGlowMat = new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.15 });
+const focusGlow = new THREE.Mesh(focusGlowGeo, focusGlowMat);
+focusSphere.add(focusGlow);
+
+let ship = null, glassBox = null, glassBoxMat = null;
+const shipHalfSize = new THREE.Vector3(0.5, 0.5, 0.5);
+let isGlassVisible = false, isShipFlowFlipped = false, isFocusDebugVisible = false;
+let shipMats = [];
+
+gltfLoader.load(SHIP_URL, (gltf) => {
+    ship = gltf.scene;
+    const box = new THREE.Box3().setFromObject(ship);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    ship.traverse(child => {
+        if (child.isMesh) {
+            child.geometry.translate(-center.x, -center.y, -center.z);
+            child.geometry.computeVertexNormals();
+        }
+    });
+    if (size.x > size.z) {
+        ship.traverse(child => {
+            if (child.isMesh) { child.geometry.rotateY(Math.PI / 2); }
+        });
+    }
+    const finalBox = new THREE.Box3().setFromObject(ship);
+    const finalCenter = finalBox.getCenter(new THREE.Vector3());
+    const finalSize = finalBox.getSize(new THREE.Vector3());
+    ship.traverse(child => {
+        if (child.isMesh) { child.geometry.translate(-finalCenter.x, -finalCenter.y, -finalCenter.z); } 
+    });
+    shipHalfSize.copy(finalSize).multiplyScalar(0.5);
+    ship.traverse(child => {
+        if (child.isMesh) {
+            const fdmMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.6, clearcoat: 0.0, clearcoatRoughness: 0.1, metalness: 0.0 });
+            applyFDMMaterial(fdmMat, 0.001, 0.4, 1);
+            child.material = fdmMat;
+            shipMats.push(fdmMat);
+        }
+    });
+    const glassBoxGeo = new THREE.BoxGeometry(finalSize.x, finalSize.y, finalSize.z);
+    glassBoxMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.0, transmission: 1.0, thickness: 0.5, ior: 1.5, clearcoat: 1.0, clearcoatRoughness: 0.0, transparent: true, opacity: 1.0, side: THREE.DoubleSide });
+    glassBox = new THREE.Mesh(glassBoxGeo, glassBoxMat);
+    glassBox.visible = isGlassVisible; 
+    ship.add(glassBox); 
+    ship.position.set(3.5, 1.0, 0.0); scene.add(ship);
+    applyShipTransform(); updateMaterial();
+});
+
+const TEX_W = 512, TEX_H = 2048;
+function createNormalSprite(w, h) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const cctx = c.getContext('2d'); const cData = cctx.createImageData(w, h);
+    const halfX = w / 2, halfY = h / 2;
+    for(let y=0; y<h; y++) {
+        for(let x=0; x<w; x++) {
+            const dx = (x - halfX) / halfX; const dy = (halfY - y) / halfY; 
+            const dist = dx*dx + dy*dy; const idx = (y*w + x)*4;
+            if(dist > 1) { cData.data[idx] = 128; cData.data[idx+1] = 128; cData.data[idx+2] = 255; cData.data[idx+3] = 0; }
+            else { const nz = Math.sqrt(1 - dist); cData.data[idx] = Math.floor((dx * 0.5 + 0.5) * 255); cData.data[idx+1] = Math.floor((dy * 0.5 + 0.5) * 255); cData.data[idx+2] = Math.floor((nz * 0.5 + 0.5) * 255); cData.data[idx+3] = 255; }
+        }
+    }
+    cctx.putImageData(cData, 0, 0); return c;
+}
+const dropletSprite = createNormalSprite(128, 192);
+const fogSprite = createNormalSprite(32, 32);
+const staticNCanvas = document.createElement('canvas'); const staticNCtx = staticNCanvas.getContext('2d');
+const staticRCanvas = document.createElement('canvas'); const staticRCtx = staticRCanvas.getContext('2d');
+const dynNCanvas = document.createElement('canvas'); const dynNCtx = dynNCanvas.getContext('2d');
+const dynRCanvas = document.createElement('canvas'); const dynRCtx = dynRCanvas.getContext('2d');
+[staticNCanvas, staticRCanvas, dynNCanvas, dynRCanvas].forEach(c => { c.width = TEX_W; c.height = TEX_H; });
+
+let condScale = 1.0;
+function generateStaticFog(density = 1.0) {
+    staticRCtx.fillStyle = `rgb(${150 * density}, ${150 * density}, ${150 * density})`; staticRCtx.fillRect(0, 0, TEX_W, TEX_H);
+    staticNCtx.fillStyle = 'rgb(128, 128, 255)'; staticNCtx.fillRect(0, 0, TEX_W, TEX_H);
+    const count = 12000 * density; 
+    for(let i=0; i<count; i++) {
+        const x = Math.random() * TEX_W; const y = Math.random() * TEX_H; const r = (2 + Math.random() * 4) * condScale; 
+        staticRCtx.fillStyle = `rgba(255, 255, 255, ${0.3 + Math.random() * 0.4})`;
+        staticRCtx.beginPath(); staticRCtx.arc(x, y, r, 0, Math.PI*2); staticRCtx.fill();
+        const size = Math.ceil(r*2); staticNCtx.drawImage(fogSprite, x-r, y-r, size, size);
+    }
+}
+
+let droplets = []; const MAX_DROPLETS = 15; 
+let dropSpeed = 1.0, dropSize = 1.5, rainSpeed = 1.0;
+
+function createDroplet(randomStart = false) {
+    const x = Math.random() * TEX_W; const y = randomStart ? Math.random() * TEX_H : -Math.random() * 50;
+    const baseMaxR = 8 + Math.random() * 12;
+    return { x: x, y: y, lastX: x, lastY: y, r: 2 + Math.random() * 4, baseMaxR: baseMaxR, fallThresholdRatio: 0.4 + Math.random() * 0.3, vy: 0, vx: 0, gravity: 80 + Math.random() * 120, maxSpeed: 160 + Math.random() * 240, growthRate: 1.0 + Math.random() * 3.0 };
+}
+function initDroplets() { droplets = []; for(let i=0; i<MAX_DROPLETS; i++) { droplets.push(createDroplet(true)); } }
+initDroplets(); generateStaticFog(1.0); 
+dynRCtx.drawImage(staticRCanvas, 0, 0); dynNCtx.drawImage(staticNCanvas, 0, 0);
+
+const panelNormalTex = new THREE.CanvasTexture(dynNCanvas);
+const panelRoughTex = new THREE.CanvasTexture(dynRCanvas);
+panelNormalTex.wrapS = panelNormalTex.wrapT = THREE.ClampToEdgeWrapping; 
+panelRoughTex.wrapS = panelRoughTex.wrapT = THREE.ClampToEdgeWrapping;
+panelNormalTex.generateMipmaps = true; panelNormalTex.minFilter = THREE.LinearMipmapLinearFilter;
+panelRoughTex.generateMipmaps = true; panelRoughTex.minFilter = THREE.LinearMipmapLinearFilter;
+
+const panelGlassMat = new THREE.MeshPhysicalMaterial({ transmission: 1.0, thickness: 0.1, ior: 1.45, roughness: 0.05, metalness: 0.0, clearcoat: 1.0, clearcoatRoughness: 0.0, envMapIntensity: 1.5, transparent: true });
+const condensationMat = new THREE.MeshPhysicalMaterial({ transmission: 1.0, thickness: 1.5, ior: 1.45, roughness: 1.0, metalness: 0.0, clearcoat: 1.0, clearcoatRoughness: 0.0, envMapIntensity: 1.5, normalMap: panelNormalTex, normalScale: new THREE.Vector2(1.5, 1.5), roughnessMap: panelRoughTex, transparent: true });
+condensationMat.userData.fogDensity = 1.0;
+
+const panelGeo = new THREE.BoxGeometry(0.75, 3.0, 0.1);
+const panelMats = [panelGlassMat, panelGlassMat, panelGlassMat, panelGlassMat, condensationMat, panelGlassMat];
+const condensationPanel = new THREE.Mesh(panelGeo, panelMats);
+condensationPanel.position.set(1.5, 1.5, 0); condensationPanel.rotation.x = THREE.MathUtils.degToRad(-7); 
+scene.add(condensationPanel);
+
+function updateDroplets(dt, time) {
+    const recoveryRate = (0.6 * dt) * rainSpeed;
+    dynRCtx.globalAlpha = Math.min(1.0, recoveryRate); dynRCtx.drawImage(staticRCanvas, 0, 0);
+    dynNCtx.globalAlpha = Math.min(1.0, recoveryRate); dynNCtx.drawImage(staticNCanvas, 0, 0);
+    const microSpawnCount = Math.max(0, Math.round(1800 * dt * rainSpeed));
+    dynRCtx.fillStyle = 'rgb(255, 255, 255)';
+    for(let i=0; i<microSpawnCount; i++) {
+        const x = Math.random() * TEX_W; const y = Math.random() * TEX_H; const r = (1.0 + Math.random() * 3.0) * condScale; 
+        const alpha = (0.1 + Math.random() * 0.2) * dt * 60; 
+        dynRCtx.globalAlpha = alpha; dynRCtx.beginPath(); dynRCtx.arc(x, y, r, 0, Math.PI*2); dynRCtx.fill();
+        dynNCtx.globalAlpha = alpha; const size = Math.ceil(r*2); dynNCtx.drawImage(fogSprite, x-r, y-r, size, size);
+    }
+    dynRCtx.globalAlpha = 1.0; dynNCtx.globalAlpha = 1.0;
+    dynRCtx.lineCap = 'round'; dynNCtx.lineCap = 'round';
+    dynRCtx.fillStyle = 'rgb(0, 0, 0)'; dynRCtx.strokeStyle = 'rgb(0, 0, 0)'; dynNCtx.strokeStyle = 'rgb(128, 128, 255)';
+    for(let drop of droplets) {
+        drop.lastY = drop.y; drop.lastX = drop.x;
+        drop.r += drop.growthRate * dt; const currentMaxR = drop.baseMaxR * dropSize;
+        if (drop.r > currentMaxR) drop.r = currentMaxR;
+        const visR = drop.r * condScale; const currentFallThreshold = currentMaxR * drop.fallThresholdRatio;
+        if (drop.r >= currentFallThreshold) { drop.vy += drop.gravity * dt; drop.vy = Math.min(drop.vy, drop.maxSpeed); drop.vx += (Math.random() - 0.5) * 60 * dt; }
+        drop.vx *= Math.pow(0.9, dt * 60); drop.vx = Math.max(-40, Math.min(40, drop.vx)); 
+        drop.x += drop.vx * dt * 60; drop.y += drop.vy * dt;
+        if (drop.x < 0) { drop.x = 0; drop.vx *= -0.5; }
+        if (drop.x > TEX_W) { drop.x = TEX_W; drop.vx *= -0.5; }
+        if (drop.vy > 1.0 || Math.abs(drop.vx) > 1.0) {
+            dynRCtx.lineWidth = visR * 1.0; dynRCtx.beginPath(); dynRCtx.moveTo(drop.lastX, drop.lastY); dynRCtx.lineTo(drop.x, drop.y); dynRCtx.stroke();
+            dynNCtx.lineWidth = visR * 1.0; dynNCtx.beginPath(); dynNCtx.moveTo(drop.lastX, drop.lastY); dynNCtx.lineTo(drop.x, drop.y); dynNCtx.stroke();
+        }
+        dynRCtx.beginPath(); dynRCtx.ellipse(drop.x, drop.y, visR * 1.2, visR * 1.5, 0, 0, Math.PI*2); dynRCtx.fill();
+        const drawW = visR * 2.4; const drawH = visR * 3.0; dynNCtx.drawImage(dropletSprite, drop.x - drawW/2, drop.y - drawH/2, drawW, drawH);
+        if (drop.y > TEX_H + 20) { Object.assign(drop, createDroplet(false)); }
+    }
+    panelNormalTex.needsUpdate = true; panelRoughTex.needsUpdate = true;
+}
+
+const skyGeo = new THREE.SphereGeometry(400, 32, 32);
+const skyMat = new THREE.ShaderMaterial({
+  uniforms: { time: { value: 0 }, sunDir: { value: new THREE.Vector3(0.5, 0.8, 0.5) }, cloudDensity: { value: 0.5 }, cloudSpeed: { value: 0.3 }, cloudScale: { value: 8.0 } },
+  vertexShader: `varying vec3 vWorldPos;
+void main() {
+  vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`,
+  fragmentShader: `varying vec3 vWorldPos;
+uniform float time;
+uniform vec3 sunDir;
+uniform float cloudDensity;
+uniform float cloudSpeed;
+uniform float cloudScale;
+float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float noise(vec3 x) { vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(mix(mix(hash(i + vec3(0,0,0)), hash(i + vec3(1,0,0)), f.x), mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y), mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x), mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z); }
+float fbm(vec3 p) { float v = 0.0; float a = 0.5; for (int i = 0; i < 6; i++) { v += a * noise(p); p *= 2.0; a *= 0.5; } return v; }
+void main() {
+  vec3 dir = normalize(vWorldPos);
+  float alpha = 0.0;
+  vec3 col = vec3(1.0);
+  if (dir.y > 0.0) {
+    vec3 cloudPos = dir * cloudScale + vec3(time * cloudSpeed, 0.0, time * cloudSpeed * 0.5);
+    float n = fbm(cloudPos);
+    float threshold = 1.0 - cloudDensity;
+    alpha = smoothstep(threshold, threshold + 0.25, n) * smoothstep(0.0, 0.15, dir.y);
+    float sunLight = max(dot(dir, sunDir), 0.0);
+    col = mix(vec3(1.0), vec3(1.0, 0.9, 0.7), pow(sunLight, 4.0));
+    col *= (0.8 + 0.5 * alpha);
+  }
+  gl_FragColor = vec4(col, alpha);
+}`,
+  transparent: true, depthWrite: false, side: THREE.BackSide
+});
+const sky = new THREE.Mesh(skyGeo, skyMat); scene.add(sky);
+
+const waterGeo = new THREE.PlaneGeometry(50, 50, 400, 400);
+const waterNormalsTex = loadTex('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/waternormals.jpg');
+
+function generateWaves(scale, variety) {
+    let seed = Math.floor(variety * 100) + Math.floor(scale * 10) * 1000;
+    let rand = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+    const waves = [], steeps = [], amps = [];
+    for (let i = 0; i < 8; i++) {
+        const angle = rand() * Math.PI * 2; const dir = new THREE.Vector2(Math.cos(angle), Math.sin(angle)).normalize();
+        const wavelength = (20.0 / Math.pow(1.4, i)) * scale; const amplitude = 0.4 / Math.pow(1.4, i);
+        const steepness = 0.15 - i * 0.01; const phase = rand() * Math.PI * 2;
+        waves.push(new THREE.Vector4(dir.x, dir.y, wavelength, phase)); steeps.push(steepness); amps.push(amplitude);
+    }
+    return { waves, steeps, amps };
+}
+const initialWaves = generateWaves(0.6, 1.0);
+
+const gerstnerShaderCode = `
+uniform float uTime;
+uniform float uSpeed;
+uniform float uHeight;
+#define NUM_WAVES 8
+uniform vec4 uWaves[NUM_WAVES];
+uniform float uSteeps[NUM_WAVES];
+uniform float uAmps[NUM_WAVES];
+vec3 gerstnerDisp = vec3(0.0);
+vec3 gerstnerTan = vec3(1.0, 0.0, 0.0);
+vec3 gerstnerBin = vec3(0.0, 1.0, 0.0);
+void applyGerstner(vec4 wave, float steep, float amp, vec2 pos, float t) {
+  float k = 2.0 * 3.14159265 / wave.z;
+  float c = sqrt(9.8 / k);
+  vec2 d = normalize(wave.xy);
+  float f = k * dot(d, pos) - c * t + wave.w;
+  gerstnerDisp.x += (steep / k) * d.x * cos(f);
+  gerstnerDisp.y += (steep / k) * d.y * cos(f);
+  gerstnerDisp.z += amp * sin(f);
+  float S = steep * amp * sin(f);
+  float C = k * amp * cos(f);
+  gerstnerTan.x -= d.x * d.x * S;
+  gerstnerTan.y -= d.x * d.y * S;
+  gerstnerTan.z += d.x * C;
+  gerstnerBin.x -= d.x * d.y * S;
+  gerstnerBin.y -= d.y * d.y * S;
+  gerstnerBin.z += d.y * C;
+}`;
+
+function setupWaterShader(shader, isBugged) {
+  shader.uniforms.uTime = { value: 0 }; shader.uniforms.uSpeed = { value: 0.1 }; shader.uniforms.uHeight = { value: 0.2 };
+  shader.uniforms.uWaves = { value: initialWaves.waves }; shader.uniforms.uSteeps = { value: initialWaves.steeps }; shader.uniforms.uAmps = { value: initialWaves.amps };
+  shader.uniforms.uSunDir = { value: new THREE.Vector3(0.5, 0.8, 0.5) }; shader.uniforms.uSSSStrength = { value: 3.0 };
+  shader.uniforms.uRippleSpeed = { value: 0.03 }; shader.uniforms.uRippleStrength = { value: 0.2 }; shader.uniforms.uRippleScale = { value: 0.3 };
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', `#include <common>
+ ${gerstnerShaderCode}
+varying vec3 vWorldPosSSS;
+varying float vWaveHeightSSS;
+varying vec3 vGerstnerTanView;
+varying vec3 vGerstnerBinView;`)
+    .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+float t = uTime * uSpeed;
+vec2 pos = position.xy;
+for(int i=0; i<NUM_WAVES; i++) {
+  applyGerstner(uWaves[i], uSteeps[i], uAmps[i] * uHeight, pos, t);
+}
+objectNormal = normalize(cross(gerstnerTan, gerstnerBin));
+vGerstnerTanView = normalize(mat3(modelViewMatrix) * gerstnerTan);
+vGerstnerBinView = normalize(mat3(modelViewMatrix) * gerstnerBin);`)
+    .replace('#include <begin_vertex>', `#include <begin_vertex>
+transformed += gerstnerDisp;
+vWaveHeightSSS = gerstnerDisp.z;
+vec4 worldPositionSSS = modelMatrix * vec4(transformed, 1.0);
+vWorldPosSSS = worldPositionSSS.xyz;`);
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', `#include <common>
+uniform vec3 uSunDir;
+uniform float uHeight;
+uniform float uSSSStrength;
+uniform float uTime;
+uniform float uRippleSpeed;
+uniform float uRippleStrength;
+uniform float uRippleScale;
+varying vec3 vWorldPosSSS;
+varying float vWaveHeightSSS;
+varying vec3 vGerstnerTanView;
+varying vec3 vGerstnerBinView;
+float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float noise(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f); float a = hash(i); float b = hash(i + vec2(1.0, 0.0)); float c = hash(i + vec2(0.0, 1.0)); float d = hash(i + vec2(1.0, 1.0)); return mix(mix(a, b, f.x), mix(c, d, f.x), f.y); }
+float fbm(vec2 p) { float v = 0.0; float a = 0.5; for (int i = 0; i < 3; i++) { v += a * noise(p); p *= 2.0; a *= 0.5; } return v; }`)
+    .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+vec2 wp = vWorldPosSSS.xz;
+float t_rip = uTime * uRippleSpeed;
+vec2 warp1 = vec2(fbm(wp * uRippleScale + t_rip), fbm(wp * uRippleScale - t_rip));
+vec2 uv1 = wp * uRippleScale + warp1 * uRippleStrength + vec2(t_rip, t_rip * 0.5);
+vec2 warp2 = vec2(fbm(wp * (uRippleScale * 1.5) - t_rip * 0.7), fbm(wp * (uRippleScale * 1.5) + t_rip * 0.7));
+vec2 uv2 = wp * (uRippleScale * 1.5) - warp2 * uRippleStrength - vec2(t_rip * 0.7, t_rip);
+vec3 tanN1 = texture2D(normalMap, uv1).xyz * 2.0 - 1.0;
+vec3 tanN2 = texture2D(normalMap, uv2).xyz * 2.0 - 1.0;
+vec3 microTanN = normalize(tanN1 * 0.7 + tanN2 * 0.5);
+microTanN.xy *= 0.4;
+vec3 correctGeoNormal = normalize(cross(vGerstnerTanView, vGerstnerBinView));
+vec3 buggedGeoNormal = normalize(cross(vGerstnerBinView, vGerstnerTanView));
+vec3 geoNormalView = ${isBugged ? 'buggedGeoNormal' : 'correctGeoNormal'};
+vec3 microNormalView = normalize(microTanN.x * vGerstnerTanView + microTanN.y * vGerstnerBinView + microTanN.z * geoNormalView);
+normal = normalize(mix(normal, microNormalView, 0.6));`)
+    .replace('#include <tonemapping_fragment>', `
+vec3 V_sss = normalize(cameraPosition - vWorldPosSSS);
+float sss = pow(max(dot(V_sss, -uSunDir), 0.0), 2.0);
+float thickness = smoothstep(0.0, max(uHeight, 0.01), vWaveHeightSSS);
+vec3 sssColor = vec3(0.0, 0.4, 0.6);
+gl_FragColor.rgb += sssColor * sss * thickness * uSSSStrength;
+#include <tonemapping_fragment>`);
+  return shader;
+}
+
+const waterMat = new THREE.MeshPhysicalMaterial({ transmission: 0.9, thickness: 0.2, ior: 1.33, roughness: 0.05, metalness: 0.0, clearcoat: 1.0, clearcoatRoughness: 0.1, envMapIntensity: 0.7, attenuationColor: new THREE.Color(0x004477), attenuationDistance: 0.5, color: new THREE.Color(0xffffff), normalMap: waterNormalsTex, normalScale: new THREE.Vector2(0.3, 0.3), transparent: true, opacity: 1.0 });
+waterMat.onBeforeCompile = (shader) => { waterMat.userData.shader = setupWaterShader(shader, false); };
+const water = new THREE.Mesh(waterGeo, waterMat);
+water.rotation.x = -Math.PI / 2; scene.add(water);
+
+const waterBuggedMat = new THREE.MeshPhysicalMaterial({ transmission: 0.9, thickness: 0.2, ior: 1.33, roughness: 0.05, metalness: 0.0, clearcoat: 1.0, clearcoatRoughness: 0.1, envMapIntensity: 0.7, attenuationColor: new THREE.Color(0x004477), attenuationDistance: 0.5, color: new THREE.Color(0xffffff), normalMap: waterNormalsTex, normalScale: new THREE.Vector2(0.3, 0.3), transparent: true, opacity: 0.5 });
+waterBuggedMat.onBeforeCompile = (shader) => { waterBuggedMat.userData.shader = setupWaterShader(shader, true); };
+const waterBugged = new THREE.Mesh(waterGeo, waterBuggedMat);
+waterBugged.rotation.x = -Math.PI / 2; waterBugged.position.y = 0.05; scene.add(waterBugged);
+
+const foamGroup = new THREE.Group(); scene.add(foamGroup);
+const foamLayers = []; const layerCount = 7; 
+const layerOffsets = []; let currentOff = 0.0;
+for(let i=0; i<layerCount; i++) { layerOffsets.push(currentOff); currentOff += 0.08 * Math.pow(0.4, i); }
+const layerCrestMins = [0.40, 0.45, 0.50, 0.55, 0.60, 1.1, 1.1]; 
+const layerCrestMaxs = [0.60, 0.65, 0.70, 0.75, 0.80, 1.2, 1.2];
+const foamGeo = new THREE.PlaneGeometry(50, 50, 128, 128); 
+
+for (let i = 0; i < layerCount; i++) {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { 
+        uTime: { value: 0 }, uSpeed: { value: 0.1 }, uHeight: { value: 0.2 }, uFoamOpacity: { value: 0.05 }, uWaves: { value: initialWaves.waves }, uSteeps: { value: initialWaves.steeps }, uAmps: { value: initialWaves.amps }, uSunDir: { value: new THREE.Vector3(0.5, 0.8, 0.5) }, uLayerOffset: { value: layerOffsets[i] }, uLayerCrestMin: { value: layerCrestMins[i] }, uLayerCrestMax: { value: layerCrestMaxs[i] }, uCameraPos: { value: new THREE.Vector3() },
+        uCubePos: { value: new THREE.Vector3() }, uCubeHalfSize: { value: new THREE.Vector3(0.5, 0.5, 0.5) }, uCubeRotY: { value: 0.0 }, uCubeFoamBoost: { value: 5.0 }, uCubeFoamSpread: { value: 1.5 },
+        uShipPos: { value: new THREE.Vector3(3.5, 1.0, 0.0) }, uShipHalfSize: { value: new THREE.Vector3(0.5, 0.5, 0.5) }, uShipRotY: { value: 0.0 }, uShipFoamBoost: { value: 1.0 }, uShipFoamSpread: { value: 2.0 }, uShipWakeLength: { value: 3.0 }, uShipFlowOffset: { value: 0.0 }, uShipFlowFlip: { value: 0.0 }, uShipStartDensity: { value: 1.0 }, uShipBeamMult: { value: 1.0 }
+      },
+      vertexShader: `
+        varying vec3 vWorldPos;
+        varying float vWaveHeight;
+        varying vec2 vFlowDir;
+        ${gerstnerShaderCode}
+        uniform float uLayerOffset;
+        void main() {
+          float t = uTime * uSpeed;
+          vec2 pos = position.xy;
+          for(int j=0; j<NUM_WAVES; j++) {
+            applyGerstner(uWaves[j], uSteeps[j], uAmps[j] * uHeight, pos, t);
+          }
+          vec2 avgDir = vec2(0.0);
+          for(int j=0; j<NUM_WAVES; j++) {
+            vec4 wave = uWaves[j];
+            vec2 d = normalize(wave.xy);
+            avgDir += d * uAmps[j];
+          }
+          vFlowDir = normalize(avgDir + vec2(0.0001, 0.0001));
+          vec3 transformed = position + gerstnerDisp;
+          transformed.z += 0.02 + uLayerOffset;
+          vec4 worldPosition = modelMatrix * vec4(transformed, 1.0);
+          vWorldPos = worldPosition.xyz;
+          vWaveHeight = gerstnerDisp.z;
+          gl_Position = projectionMatrix * viewMatrix * worldPosition;
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vWorldPos;
+        varying float vWaveHeight;
+        varying vec2 vFlowDir;
+        uniform float uTime;
+        uniform float uSpeed;
+        uniform float uHeight;
+        uniform float uFoamOpacity;
+        uniform vec3 uSunDir;
+        uniform float uLayerOffset;
+        uniform float uLayerCrestMin;
+        uniform float uLayerCrestMax;
+        uniform vec3 uCameraPos;
+        uniform vec3 uCubePos;
+        uniform vec3 uCubeHalfSize;
+        uniform float uCubeRotY;
+        uniform float uCubeFoamBoost;
+        uniform float uCubeFoamSpread;
+        uniform vec3 uShipPos;
+        uniform vec3 uShipHalfSize;
+        uniform float uShipRotY;
+        uniform float uShipFoamBoost;
+        uniform float uShipFoamSpread;
+        uniform float uShipWakeLength;
+        uniform float uShipFlowOffset;
+        uniform float uShipFlowFlip;
+        uniform float uShipStartDensity;
+        uniform float uShipBeamMult;
+        vec2 hash2( vec2 p ) {
+          return fract(sin(vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))))*43758.5453);
+        }
+        vec4 voronoiBubbles( in vec2 x, float t ) {
+          vec2 n = floor( x );
+          vec2 f = fract( x );
+          float md = 8.0;
+          vec2 mr = vec2(0.0);
+          for( int j=-1; j<=1; j++ )
+          for( int i=-1; i<=1; i++ ) {
+            vec2 g = vec2(float(i),float(j));
+            vec2 o = hash2( n + g );
+            o = 0.5 + 0.5*sin( t + 6.2831*o );
+            vec2 r = g + o - f;
+            float d = dot(r,r);
+            if( d<md ) { md=d; mr=r; }
+          }
+          return vec4(md, mr.x, mr.y, 0.0);
+        }
+        float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+        float noise(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f); float a = hash(i); float b = hash(i + vec2(1.0, 0.0)); float c = hash(i + vec2(0.0, 1.0)); float d = hash(i + vec2(1.0, 1.0)); return mix(mix(a, b, f.x), mix(c, d, f.x), f.y); }
+        float fbm(vec2 p) { float v = 0.0; float a = 0.5; for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.0; a *= 0.5; } return v; }
+        float calculateWakeCube(vec2 worldPos, float waterY, vec3 objPos, vec3 objHalfSize, float objRotY, float foamSpread, vec2 flowDir) {
+          vec2 localPos = worldPos - objPos.xz;
+          float objBottom = objPos.y - objHalfSize.y;
+          float objTop = objPos.y + objHalfSize.y;
+          float intersectionY = smoothstep(objBottom - 0.1, objBottom + 0.1, waterY) * (1.0 - smoothstep(objTop - 0.1, objTop + 0.1, waterY));
+          float cosY = cos(-objRotY);
+          float sinY = sin(-objRotY);
+          vec2 localPosRotated = vec2(localPos.x * cosY - localPos.y * sinY, localPos.x * sinY + localPos.y * cosY);
+          vec2 d_box = abs(localPosRotated) - objHalfSize.xz;
+          float dist_obj = length(max(d_box, 0.0));
+          vec2 flowDirLocal = vec2(flowDir.x * cosY + flowDir.y * sinY, -flowDir.x * sinY + flowDir.y * cosY);
+          float flowDist = dot(localPos, flowDir);
+          float max_dot = max(objHalfSize.x * abs(flowDirLocal.x) + objHalfSize.z * abs(flowDirLocal.y), 0.0001);
+          float baseSize = max(max(objHalfSize.x, objHalfSize.z), 0.1);
+          float bow_press = smoothstep(-max_dot, max_dot, flowDist);
+          float base_expansion = mix(0.02, 0.4, bow_press) * foamSpread * baseSize;
+          float depth = max(0.0, flowDist - max_dot);
+          float wakeLength = 15.0 * baseSize;
+          float wake_expansion = (depth / max(wakeLength, 0.001)) * 8.0 * foamSpread * baseSize;
+          float total_expansion = base_expansion + wake_expansion;
+          float combined_dist = dist_obj - total_expansion;
+          float intersectionMask = smoothstep(foamSpread * baseSize, 0.0, combined_dist);
+          float wakeFade = 1.0 - smoothstep(wakeLength * 0.2, wakeLength, depth);
+          return intersectionMask * intersectionY * wakeFade;
+        }
+        float calculateWakeShip(vec2 worldPos, float waterY, vec3 objPos, vec3 objHalfSize, float foamWidthK, float gradPower, float lengthMult, float flowOffset, float flowFlip, float startDensity, float beamMult, float shipRotY, vec2 flowDir) {
+          float objBottom = objPos.y - objHalfSize.y;
+          float objTop = objPos.y + objHalfSize.y;
+          float intersectionY = smoothstep(objBottom - 0.1, objBottom + 0.1, waterY) * (1.0 - smoothstep(objTop - 0.1, objTop + 0.1, waterY));
+          float dirSign = flowFlip > 0.5 ? -1.0 : 1.0;
+          vec2 forwardDir = normalize(flowDir) * dirSign;
+          vec2 rightDir = vec2(-forwardDir.y, forwardDir.x);
+          vec2 origin = objPos.xz + forwardDir * flowOffset;
+          vec2 localPos = worldPos - origin;
+          float y_dist = dot(localPos, forwardDir);
+          float x_dist = abs(dot(localPos, rightDir));
+          float baseSize = max(max(objHalfSize.x, objHalfSize.z), 0.1);
+          float maxWakeLength = baseSize * 2.0 * lengthMult;
+          vec2 shipRight = vec2(cos(shipRotY), -sin(shipRotY));
+          float perp = abs(dot(normalize(flowDir), shipRight));
+          float beamFactor = 1.0 + perp * (beamMult - 1.0);
+          float y_valid = max(y_dist, 0.0);
+          float x_limit = sqrt(y_valid / max(foamWidthK, 0.001)) * beamFactor;
+          float edgeSmooth = max(baseSize * 0.1, 0.1);
+          float parabolaMask = 1.0 - smoothstep(x_limit - edgeSmooth, x_limit + edgeSmooth, x_dist);
+          parabolaMask *= step(0.0, y_dist);
+          float fade = 1.0 - clamp(y_dist / max(maxWakeLength, 0.001), 0.0, 1.0);
+          float density = startDensity * pow(max(fade, 0.0), gradPower);
+          return parabolaMask * density * intersectionY;
+        }
+        void main() {
+          float maxH = max(uHeight, 0.01);
+          float heightNorm = clamp((vWaveHeight / maxH) * 0.5 + 0.5, 0.0, 1.0);
+          float crest = smoothstep(uLayerCrestMin, uLayerCrestMax, heightNorm);
+          vec2 uv = vWorldPos.xz + vec2(uLayerOffset * 25.0, uLayerOffset * 35.0);
+          float t = uTime * uSpeed * 2.0;
+          float scaleVar = 1.0 + uLayerOffset * 5.0;
+          vec2 warpUv = uv * 1.5 + vec2(fbm(uv * 0.8 + t*0.1), fbm(uv * 0.8 - t*0.1));
+          float macro = fbm(warpUv * 1.5 + vec2(t*0.1, t*0.2));
+          float macroMask = smoothstep(0.4, 0.7, macro);
+          float e = 0.1;
+          float mx = fbm(warpUv * 1.5 + vec2(t*0.1 + e, t*0.2));
+          float my = fbm(warpUv * 1.5 + vec2(t*0.1, t*0.2 + e));
+          vec3 macroN = normalize(vec3(macro - mx, macro - my, 0.3));
+          vec4 bub1 = voronoiBubbles(uv * (30.0 * scaleVar) + vec2(t*0.4, t*0.3), t);
+          vec4 bub2 = voronoiBubbles(uv * (55.0 * scaleVar) - vec2(t*0.3, t*0.5), t * 1.2);
+          float b1 = 1.0 - smoothstep(0.0, 0.7, sqrt(bub1.x));
+          float b2 = 1.0 - smoothstep(0.0, 0.6, sqrt(bub2.x));
+          vec3 N1 = normalize(vec3(bub1.y * 10.0, bub1.z * 10.0, sqrt(max(1.0 - bub1.x, 0.0))));
+          vec3 N2 = normalize(vec3(bub2.y * 10.0, bub2.z * 10.0, sqrt(max(1.0 - bub2.x, 0.0))));
+          float microN1 = noise(uv * 200.0 + t) * 0.2;
+          float microN2 = noise(uv * 300.0 - t) * 0.2;
+          N1.xy += microN1;
+          N2.xy += microN2;
+          N1 = normalize(N1);
+          N2 = normalize(N2);
+          vec3 N = normalize(N1 * b1 + N2 * b2 + macroN * macroMask * 1.5);
+          float bubbleMass = clamp(b1 * 1.5 + b2 * 1.5, 0.0, 1.0);
+          float microTex = fbm(uv * 150.0 + t * 0.8);
+          bubbleMass *= (0.8 + 0.2 * microTex);
+          float lingering = fbm(uv * 2.0 - vec2(t*0.2, t*0.1));
+          lingering = smoothstep(0.5, 0.8, lingering) * smoothstep(0.3, 0.5, heightNorm);
+          float baseFoamDensity = crest * clamp(macroMask * 0.8 + bubbleMass * 0.9, 0.0, 1.0) + lingering * 0.4;
+          vec2 flowDir = vec2(-vFlowDir.y, vFlowDir.x);
+          float churnSpeed = 3.0;
+          float angle45 = 0.78539816339;
+          float cs45 = cos(angle45);
+          float sn45 = sin(angle45);
+          vec2 churnDir = vec2(flowDir.x * cs45 - flowDir.y * sn45, flowDir.x * sn45 + flowDir.y * cs45);
+          vec2 churnUv = uv * 6.0 + vec2(t * 2.5, -t * 1.8) - churnDir * (t * churnSpeed);
+          float churn = fbm(churnUv);
+          float boiling = smoothstep(0.3, 0.7, churn);
+          float standardFoamNoise = clamp(macroMask * 0.8 + bubbleMass * 0.9, 0.0, 1.0);
+          float finalWakeFoam = mix(standardFoamNoise, boiling, 0.7);
+          float wakeMaskCube = calculateWakeCube(vWorldPos.xz, vWorldPos.y, uCubePos, uCubeHalfSize, uCubeRotY, uCubeFoamSpread, flowDir);
+          float cubeFoamDensity = wakeMaskCube * finalWakeFoam * uCubeFoamBoost;
+          float wakeMaskShip = calculateWakeShip(vWorldPos.xz, vWorldPos.y, uShipPos, uShipHalfSize, uShipFoamBoost, uShipFoamSpread, uShipWakeLength, uShipFlowOffset, uShipFlowFlip, uShipStartDensity, uShipBeamMult, uShipRotY, flowDir);
+          float shipFoamDensity = wakeMaskShip * finalWakeFoam * 3.0;
+          float foamDensity = clamp(baseFoamDensity + cubeFoamDensity + shipFoamDensity, 0.0, 1.0);
+          vec3 V = normalize(uCameraPos - vWorldPos);
+          float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+          float ao = mix(0.5, 1.0, macroMask * 0.5 + bubbleMass * 0.5);
+          float diff = max(dot(N, uSunDir), 0.0) * ao;
+          float spec = pow(max(dot(N, uSunDir), 0.0), 64.0);
+          float foamSSS = pow(max(dot(V, -uSunDir), 0.0), 2.0);
+          vec3 sssCol = vec3(0.8, 0.9, 1.0) * foamSSS * foamDensity * 2.0;
+          vec3 foamCol = vec3(0.95, 0.98, 1.0) * (0.5 + diff * 0.5) + spec * 0.6 + fresnel * 0.2 + sssCol;
+          float wetEdge = smoothstep(0.0, 0.4, foamDensity);
+          float layerAlpha = 1.0 - (uLayerOffset * 1.5);
+          float baseAlpha = baseFoamDensity * uFoamOpacity * 1.5;
+          float cubeAlpha = clamp(cubeFoamDensity, 0.0, 1.0) * 0.4;
+          float shipAlpha = clamp(shipFoamDensity, 0.0, 1.0) * 0.4;
+          float alpha = (baseAlpha + cubeAlpha + shipAlpha) * layerAlpha * wetEdge;
+          float layerVisibility = 1.0;
+          if (uLayerOffset > 0.25) {
+            layerVisibility = smoothstep(0.1, 0.5, max(cubeFoamDensity, shipFoamDensity));
+            alpha *= layerVisibility;
+          }
+          if(alpha < 0.01) discard;
+          gl_FragColor = vec4(foamCol, alpha);
+        }
+      `,
+      transparent: true, depthWrite: false
+    });
+    const mesh = new THREE.Mesh(foamGeo, mat);
+    mesh.rotation.x = -Math.PI / 2; mesh.renderOrder = 999; 
+    foamGroup.add(mesh); foamLayers.push(mat);
+}
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8); scene.add(dirLight);
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+pmremGenerator.compileEquirectangularShader();
+let currentEnvRT = null;
+const loadHDRI = (key) => {
+  const p = hdriPresets[key]; if (!p) return;
+  hdrLoader.load(p.url, tex => {
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    const envRT = pmremGenerator.fromEquirectangular(tex);
+    if (currentEnvRT) currentEnvRT.dispose();
+    currentEnvRT = envRT;
+    scene.environment = envRT.texture; scene.background = tex;
+    dirLight.position.copy(p.sunDir).normalize();
+    skyMat.uniforms.sunDir.value.copy(p.sunDir).normalize();
+    foamLayers.forEach(m => m.uniforms.uSunDir.value.copy(p.sunDir).normalize());
+    if (waterMat.userData.shader) waterMat.userData.shader.uniforms.uSunDir.value.copy(p.sunDir).normalize();
+    if (waterBuggedMat.userData.shader) waterBuggedMat.userData.shader.uniforms.uSunDir.value.copy(p.sunDir).normalize();
+    renderer.toneMappingExposure = p.exposure;
+  });
+};
+
+const composer = new EffectComposer(renderer);
+const rt1Depth = new THREE.DepthTexture(); rt1Depth.type = THREE.UnsignedShortType;
+const rt2Depth = new THREE.DepthTexture(); rt2Depth.type = THREE.UnsignedShortType;
+composer.renderTarget1.depthTexture = rt1Depth;
+composer.renderTarget2.depthTexture = rt2Depth;
+
+composer.addPass(new RenderPass(scene, camera));
+const bokehPass = new BokehPass(scene, camera, { focus: 5.0, aperture: 0.005, maxblur: 0.003 });
+composer.addPass(bokehPass);
+
+const dofVertex = `varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+class DoFShaderPass extends ShaderPass { render(renderer, writeBuffer, readBuffer, deltaTime, maskActive) { if (this.uniforms.tDepth) { this.uniforms.tDepth.value = readBuffer.depthTexture; } super.render(renderer, writeBuffer, readBuffer, deltaTime, maskActive); } }
+const diskShader = { uniforms: { tDiffuse: { value: null }, tDepth: { value: null }, focus: { value: 5.0 }, aperture: { value: 0.005 }, maxblur: { value: 0.003 }, aspect: { value: initialW / initialH }, cameraNear: { value: camera.near }, cameraFar: { value: camera.far } }, vertexShader: dofVertex, fragmentShader: `#include <packing>
+uniform sampler2D tDiffuse;
+uniform sampler2D tDepth;
+uniform float focus;
+uniform float aperture;
+uniform float maxblur;
+uniform float aspect;
+uniform float cameraNear;
+uniform float cameraFar;
+varying vec2 vUv;
+float getCoC(vec2 uv) {
+  float d = texture2D(tDepth, uv).x;
+  float viewZ = perspectiveDepthToViewZ(d, cameraNear, cameraFar);
+  float factor = focus + viewZ;
+  return clamp(factor * aperture, -maxblur, maxblur);
+}
+void main() {
+  float centerCoC = getCoC(vUv);
+  float radius = abs(centerCoC);
+  vec4 base = texture2D(tDiffuse, vUv);
+  if (radius < 0.0008) {
+    gl_FragColor = base;
+    return;
+  }
+  const int N = 48;
+  vec4 sum = vec4(0.0);
+  float wsum = 0.0;
+  for (int i = 0; i < N; i++) {
+    float fi = float(i) + 0.5;
+    float r = sqrt(fi / float(N));
+    float ang = fi * 2.39996323;
+    vec2 offs = vec2(cos(ang), sin(ang)) * r * radius;
+    offs.x *= aspect;
+    float tapDist = length(offs);
+    vec2 suv = vUv + offs;
+    float sCoC = getCoC(suv);
+    float gw = exp(-2.0 * r * r);
+    if (sCoC > 0.0 && sCoC < tapDist) gw = 0.0;
+    sum += texture2D(tDiffuse, suv) * gw;
+    wsum += gw;
+  }
+  gl_FragColor = sum / max(wsum, 0.0001);
+}` };
+const diskPass = new DoFShaderPass(diskShader); composer.addPass(diskPass);
+const tiltShader = { uniforms: { tDiffusive: { value: null }, tDepth: { value: null }, focus: { value: 5.0 }, maxblur: { value: 0.003 }, focusRange: { value: 1.0 }, aspect: { value: initialW / initialH }, cameraNear: { value: camera.near }, cameraFar: { value: camera.far } }, vertexShader: dofVertex, fragmentShader: `#include <packing>
+uniform sampler2D tDiffuse;
+uniform sampler2D tDepth;
+uniform float focus;
+uniform float maxblur;
+uniform float focusRange;
+uniform float aspect;
+uniform float cameraNear;
+uniform float cameraFar;
+varying vec2 vUv;
+void main() {
+  float d = texture2D(tDepth, vUv).x;
+  float viewZ = perspectiveDepthToViewZ(d, cameraNear, cameraFar);
+  float dist = -viewZ;
+  float centerDist = abs(vUv.y - 0.5);
+  float tiltFactor = smoothstep(focusRange * 0.1, focusRange * 0.5, centerDist);
+  float depthFactor = smoothstep(0.0, max(focusRange, 0.001), abs(dist - focus));
+  float radius = max(tiltFactor, depthFactor) * maxblur * 3.0;
+  vec4 base = texture2D(tDiffuse, vUv);
+  if (radius < 0.0008) {
+    gl_FragColor = base;
+    return;
+  }
+  const int N = 16;
+  vec4 sum = vec4(0.0);
+  float wsum = 0.0;
+  for (int i = 0; i < N; i++) {
+    float fi = float(i) + 0.5;
+    float r = sqrt(fi / float(N));
+    float ang = fi * 2.39996323;
+    vec2 offs = vec2(cos(ang), sin(ang)) * r * radius;
+    offs.x *= aspect;
+    float gw = exp(-3.0 * r * r);
+    sum += texture2D(tDiffuse, vUv + offs) * gw;
+    wsum += gw;
+  }
+  gl_FragColor = sum / max(wsum, 0.0001);
+}` };
+const tiltPass = new DoFShaderPass(tiltShader); composer.addPass(tiltPass);
+composer.addPass(new OutputPass());
+
+let dofMethod = 'bokeh';
+const setDoFMethod = (m) => { dofMethod = m; bokehPass.enabled = (m === 'bokeh'); diskPass.enabled = (m === 'disk'); tiltPass.enabled = (m === 'tilt'); };
+setDoFMethod('bokeh');
+
+const setToneMapping = (tm) => { if (tm === 'agx') renderer.toneMapping = THREE.AgXToneMapping; else if (tm === 'reinhard') renderer.toneMapping = THREE.ReinhardToneMapping; else renderer.toneMapping = THREE.ACESFilmicToneMapping; };
+
+let currentMode = 'realism';
+const setMode = (mode) => { currentMode = mode; updateMaterial(); };
+let focusTarget = 'ship'; 
+
+const ui = {};
+const uiConfig = [
+    { section: "Меню (Liquid Glass)", items: [
+        { id: "frost", label: "Мутность", min: 0, max: 60, step: 1, val: 4 },
+        { id: "height", label: "Высота меню", min: 30, max: 95, step: 1, val: 84 },
+        { id: "scrollFriction", label: "Инерция (Трение)", min: 0.10, max: 1.00, step: 0.01, val: 0.90 },
+        { id: "scrollWheelSpeed", label: "Скорость колесика", min: 0.01, max: 1.00, step: 0.01, val: 0.10 },
+        { id: "scrollSpring", label: "Подпружинивание", min: 0.005, max: 0.500, step: 0.005, val: 0.015 },
+    ]},
+    { section: "1. Зона гравировки (Куб)", items: [
+        { id: "engraveSize", label: "Размер шрифта", min: 0.05, max: 1.0, step: 0.05, val: 0.25 },
+        { id: "engraveDepth", label: "Глубина (Экструд)", min: 0.05, max: 1.0, step: 0.05, val: 0.5 },
+    ]},
+    { section: "2. Фигура вращения (Lathe)", items: [] },
+    { section: "3. Генератор Капители (Акант)", items: [
+        { id: "leafHeight", label: "Высота листа", min: 0.5, max: 3, step: 0.1, val: 1.5 },
+        { id: "leafWidth", label: "Ширина листа", min: 0.1, max: 1, step: 0.05, val: 0.4 },
+        { id: "lobes", label: "Кол-во лопастей", min: 3, max: 12, step: 1, val: 6 },
+        { id: "curl", label: "Сила изгиба (Curl)", min: 0, max: 2.0, step: 0.05, val: 0.5 },
+        { id: "curlStart", label: "Начало изгиба", min: 0, max: 0.9, step: 0.05, val: 0.3 },
+        { id: "leafSpread", label: "Расширение кверху (Spread)", min: 0, max: 1.5, step: 0.05, val: 0 },
+        { id: "leafTilt", label: "Наклон листа (Tilt)", min: -45, max: 45, step: 1, val: 0, unit: "°" },
+        { id: "thickness", label: "Толщина", min: 0.01, max: 0.2, step: 0.01, val: 0.05 },
+        { id: "count", label: "Кол-во листьев", min: 4, max: 16, step: 1, val: 8 },
+        { id: "bellR1", label: "Радиус низа колокола", min: 0.3, max: 1.5, step: 0.1, val: 0.6 },
+        { id: "bellR2", label: "Радиус верха колокола", min: 0.3, max: 1.5, step: 0.1, val: 0.8 },
+        { id: "bellH", label: "Высота колокола", min: 0.5, max: 3, step: 0.1, val: 1.2 },
+    ]},
+    { section: "4. Тестовый текст (Над кубом)", items: [
+        { id: "testText", label: "Текст", type: "text", val: "GLM AI" },
+        { id: "testSize", label: "Размер", min: 0.1, max: 10.0, step: 0.1, val: 0.5 },
+        { id: "testDepth", label: "Глубина (Экструд)", min: 0.01, max: 5.0, step: 0.01, val: 0.2 },
+        { id: "testPosX", label: "Позиция X", min: -10, max: 10, step: 0.1, val: 0 },
+        { id: "testPosY", label: "Позиция Y", min: -2, max: 10, step: 0.1, val: 2.5 },
+        { id: "testPosZ", label: "Позиция Z", min: -10, max: 10, step: 0.1, val: 0 },
+        { id: "testRotX", label: "Вращение X", min: 0, max: 360, step: 1, val: 0, unit: "°" },
+        { id: "testRotY", label: "Вращение Y", min: 0, max: 360, step: 1, val: 0, unit: "°" },
+        { id: "testRotZ", label: "Вращение Z", min: 0, max: 360, step: 1, val: 0, unit: "°" }
+    ]},
+    { section: "Куб и Физика", items: [
+        { id: "cubePosX", label: "Позиция X", min: -5, max: 5, step: 0.1, val: 0 },
+        { id: "cubePosY", label: "Позиция Y", min: -2, max: 10, step: 0.1, val: 1 },
+        { id: "cubePosZ", label: "Позиция Z", min: -5, max: 5, step: 0.1, val: 0 },
+        { id: "cubeRotX", label: "Вращение X", min: 0, max: 360, step: 1, val: 0 },
+        { id: "cubeRotY", label: "Вращение Y", min: 0, max: 360, step: 1, val: 0 },
+        { id: "cubeRotZ", label: "Вращение Z", min: 0, max: 360, step: 1, val: 0 },
+        { id: "cubeScale", label: "Масштаб", min: 0.1, max: 3, step: 0.1, val: 1 },
+    ]},
+    { section: "Цилиндр 1 (Трипланарный)", items: [
+        { id: "cyl1PosX", label: "Поз. X", min: -10, max: 10, step: 0.1, val: -2.0 },
+        { id: "cyl1PosY", label: "Поз. Y", min: -2, max: 10, step: 0.1, val: 1.0 },
+        { id: "cyl1PosZ", label: "Поз. Z", min: -5, max: 5, step: 0.1, val: 0.0 },
+        { id: "cyl1RotX", label: "Вращ. X", min: 0, max: 360, step: 1, val: 0 },
+        { id: "cyl1RotY", label: "Вращ. Y", min: 0, max: 360, step: 1, val: 0 },
+        { id: "cyl1RotZ", label: "Вращ. Z", min: 0, max: 360, step: 1, val: 0 },
+        { id: "cyl1Scale", label: "Масштаб", min: 0.1, max: 5, step: 0.1, val: 1.0 },
+        { id: "cyl1TexScale", label: "Масштаб текстуры", min: 0.1, max: 5, step: 0.1, val: 1.0 },
+        { id: "cyl1Rough", label: "Шероховатость", min: 0, max: 1, step: 0.01, val: 0.2 },
+        { id: "cyl1Trans", label: "Прозрачность (Trans)", min: 0, max: 1, step: 0.01, val: 0.1 },
+        { id: "cyl1Thick", label: "Толщина", min: 0, max: 10, step: 0.01, val: 2.0 },
+        { id: "cyl1IOR", label: "Преломление (IOR)", min: 1.0, max: 2.5, step: 0.01, val: 1.5 },
+        { id: "cyl1CC", label: "Лак (Clearcoat)", min: 0, max: 1, step: 0.01, val: 1.0 },
+        { id: "cyl1CCRough", label: "Шерох. лака", min: 0, max: 1, step: 0.01, val: 0.1 },
+        { id: "cyl1Metal", label: "Металличность", min: 0, max: 1, step: 0.01, val: 0.0 },
+    ]},
+    { section: "Цилиндр 2 (Процедурный)", items: [
+        { id: "cyl2PosX", label: "Поз. X", min: -10, max: 10, step: 0.1, val: -4.0 },
+        { id: "cyl2PosY", label: "Поз. Y", min: -2, max: 10, step: 0.1, val: 1.0 },
+        { id: "cyl2PosZ", label: "Поз. Z", min: -5, max: 5, step: 0.1, val: 0.0 },
+        { id: "cyl2RotX", label: "Вращ. X", min: 0, max: 360, step: 1, val: 0 },
+        { id: "cyl2RotY", label: "Вращ. Y", min: 0, max: 360, step: 1, val: 0 },
+        { id: "cyl2RotZ", label: "Вращ. Z", min: 0, max: 360, step: 1, val: 0 },
+        { id: "cyl2Scale", label: "Масштаб", min: 0.1, max: 5, step: 0.1, val: 1.0 },
+        { id: "cyl2VeinScale", label: "Масштаб прожилок", min: 0.1, max: 5, step: 0.1, val: 1.0 },
+        { id: "cyl2VeinInt", label: "Интенсивность золота", min: 0, max: 1, step: 0.01, val: 1.0 },
+        { id: "cyl2VeinThick", label: "Толщина прожилок", min: 0.01, max: 0.5, step: 0.01, val: 0.2 },
+        { id: "cyl2Rough", label: "Шероховатость", min: 0, max: 1, step: 0.01, val: 0.2 },
+        { id: "cyl2CC", label: "Лак (Clearcoat)", min: 0, max: 1, step: 0.01, val: 1.0 },
+        { id: "cyl2CCRough", label: "Шерох. лака", min: 0, max: 1, step: 0.01, val: 0.1 },
+        { id: "cyl2Metal", label: "Металличность", min: 0, max: 1, step: 0.01, val: 0.0 },
+    ]},
+    { section: "Трирема (Корабль)", items: [
+        { id: "shipPosX", label: "Поз. X", min: -5, max: 10, step: 0.1, val: 3.5 },
+        { id: "shipPosY", label: "Поз. Y", min: -2, max: 10, step: 0.1, val: 1.0 },
+        { id: "shipPosZ", label: "Поз. Z", min: -5, max: 5, step: 0.1, val: 0.0 },
+        { id: "shipRotX", label: "Вращ. X", min: 0, max: 360, step: 1, val: 0 },
+        { id: "shipRotY", label: "Вращ. Y", min: 0, max: 360, step: 1, val: 0 },
+        { id: "shipRotZ", label: "Вращ. Z", min: 0, max: 360, step: 1, val: 0 },
+        { id: "shipScale", label: "Масштаб", min: 0.1, max: 50, step: 0.1, val: 15.0 },
+    ]},
+    { section: "Материал Триремы (3D Печать ABS)", items: [
+        { id: "shipFDMLayerHeight", label: "Высота слоя", min: 0.000001, max: 0.001, step: 0.000001, val: 0.001 },
+        { id: "shipFDMBumpStrength", label: "Рельеф слоёв", min: 0, max: 1.5, step: 0.01, val: 0.4 },
+        { id: "shipRough", label: "Шероховатость", min: 0, max: 1, step: 0.01, val: 0.6 },
+        { id: "shipCC", label: "Лак (Clearcoat)", min: 0, max: 1, step: 0.01, val: 0.0 },
+        { id: "shipCCRough", label: "Шерох. лака", min: 0, max: 1, step: 0.01, val: 0.1 },
+        { id: "shipMetal", label: "Металличность", min: 0, max: 1, step: 0.01, val: 0.0 },
+    ]},
+    { section: "Пена Триремы (Парабола)", items: [
+        { id: "shipFoamBoost", label: "Множитель ширины (k)", min: 0.1, max: 10, step: 0.1, val: 1.0 },
+        { id: "shipFoamSpread", label: "Степень градиента", min: 0.1, max: 10, step: 0.1, val: 2.0 },
+        { id: "shipStartDensity", label: "Стартовая плотность", min: 0, max: 1, step: 0.01, val: 1.0 },
+        { id: "shipWakeLength", label: "Длина следа (x длин)", min: 0, max: 10, step: 0.1, val: 3.0 },
+        { id: "shipBeamMult", label: "Расширение бортом", min: 1, max: 5, step: 0.1, val: 1.0 },
+        { id: "shipFlowOffset", label: "Сдвиг центра", min: -10, max: 10, step: 0.1, val: 0.0 },
+    ]},
+    { section: "Стекло Bounding Box (Трирема)", items: [
+        { id: "glassOpacity", label: "Невидимость (Opacity)", min: 0, max: 1, step: 0.01, val: 1.0 },
+        { id: "glassTrans", label: "Прозрачность (Trans)", min: 0, max: 1, step: 0.01, val: 1.0 },
+        { id: "glassRough", label: "Шероховатость", min: 0, max: 1, step: 0.01, val: 0.0 },
+        { id: "glassThick", label: "Толщина", min: 0, max: 10, step: 0.01, val: 0.5 },
+        { id: "glassIOR", label: "Преломление (IOR)", min: 1.0, max: 2.5, step: 0.01, val: 1.5 },
+        { id: "glassCC", label: "Лак (Clearcoat)", min: 0, max: 1, step: 0.01, val: 1.0 },
+        { id: "glassCCRough", label: "Шерох. лака", min: 0, max: 1, step: 0.01, val: 0.0 },
+    ]},
+    { section: "Сцена (Конденсат)", items: [
+        { id: "dropSpeed", label: "Скорость стекания", min: 0, max: 5, step: 0.1, val: 1.0 },
+        { id: "dropSize", label: "Макс. размер", min: 0.5, max: 3, step: 0.1, val: 1.5 },
+        { id: "fogDensity", label: "Плотность тумана", min: 0, max: 2, step: 0.1, val: 1.0 },
+        { id: "condScale", label: "Масштаб", min: 0.05, max: 1.5, step: 0.05, val: 1.0 },
+        { id: "rainSpeed", label: "Дыхание (Скорость дождя)", min: 0, max: 5, step: 0.1, val: 1.0 },
+    ]},
+    { section: "Волны и Вода", items: [
+        { id: "waveHeight", label: "Высота волн", min: 0, max: 3, step: 0.05, val: 0.2 },
+        { id: "wSpeed", label: "Скорость", min: 0, max: 3, step: 0.1, val: 0.1 },
+        { id: "waveScale", label: "Масштаб волн", min: 0.2, max: 3, step: 0.1, val: 0.6 },
+        { id: "waveVariety", label: "Разнообразие", min: 0, max: 1, step: 0.01, val: 1.0 },
+        { id: "wTrans", label: "Прозрачность (Преломление)", min: 0, max: 1, step: 0.01, val: 0.9 },
+        { id: "wThick", label: "Толщина", min: 0.1, max: 10, step: 0.1, val: 0.2 },
+        { id: "wSSS", label: "SSS Воды", min: 0.8, max: 40, step: 0.1, val: 3.0 },
+        { id: "foam", label: "Пена (Общая)", min: 0, max: 2, step: 0.01, val: 0.05 },
+        { id: "cubeFoamBoost", label: "Усиление пены (Куб)", min: 0, max: 20, step: 0.1, val: 5.0 },
+        { id: "cubeFoamSpread", label: "Расширение пены (Куб)" , min: 0.5, max: 5, step: 0.1, val: 1.5 },
+        { id: "mainOpacity", label: "Прозр. основы", min: 0, max: 1, step: 0.01, val: 1.0 },
+        { id: "buggedOpacity", label: "Прозр. бага", min: 0, max: 1, step: 0.01, val: 0.5 },
+    ]},
+    { section: "Рябь (Карта нормалей)", items: [
+        { id: "rippleSpeed", label: "Скорость шума", min: 0, max: 0.5, step: 0.01, val: 0.03 },
+        { id: "rippleStrength", label: "Сила возд. шума", min: 0, max: 5, step: 0.1, val: 0.2 },
+        { id: "rippleScale", label: "Скейлинг (тайлинг)" , min: 0.1, max: 3, step: 0.1, val: 0.3 },
+    ]},
+    { section: "Облака", items: [
+        { id: "cloudDensity", label: "Плотность", min: 0, max: 1, step: 0.01, val: 0.5 },
+        { id: "cloudSpeed", label: "Скорость", min: 0, max: 2, step: 0.01, val: 0.3 },
+        { id: "cloudScale", label: "Масштаб", min: 1, max: 20, step: 0.1, val: 8.0 },
+    ]},
+    { section: "Мрамор (Дефолт3)", items: [
+        { id: "tiling", label: "Тайлинг", min: 0.5, max: 5, step: 0.1, val: 1.0 },
+        { id: "rough", label: "Шероховатость", min: 0, max: 1, step: 0.01, val: 0.01 },
+        { id: "gloss", label: "Глянец", min: 0, max: 1, step: 0.01, val: 0.99 },
+        { id: "sss", label: "Просвечивание (SSS)", min: 0, max: 1, step: 0.01, val: 1.0 },
+        { id: "cc", label: "Лак (Clearcoat)", min: 0, max: 1, step: 0.01, val: 1.0 },
+        { id: "ao", label: "Cavity", min: 0, max: 2, step: 0.01, val: 2.0 },
+        { id: "spec", label: "Specular", min: 0, max: 2, step: 0.01, val: 1.0 },
+    ]},
+    { section: "Окружение", items: [
+        { id: "hdri", label: "HDRI Окружение", val: "kloofendal_puresky", options: [
+            { value: "kloofendal", label: "Солнечный день" },
+            { value: "kloofendal_puresky", label: "Ясный день (Pure Sky)" },
+            { value: "qwantani", label: "Рассвет" }
+        ]},
+        { id: "toneMapping", label: "Тонмаппинг", val: "aces", options: [
+            { value: "aces", label: "ACES Filmic" },
+            { value: "agx", label: "AgX" },
+            { value: "reinhard", label: "Reinhard" }
+        ]}
+    ]},
+    { section: "Фокус (DoF)", items: [
+        { id: "dofAperture", label: "Апертура", min: 0, max: 0.02, step: 0.0001, val: 0.005 },
+        { id: "dofMaxBlur", label: "Макс. радиус", min: 0, max: 0.06, step: 0.001, val: 0.003 },
+        { id: "dofRange", label: "Резкая зона (Tilt)", min: 0, max: 10, step: 0.1, val: 1.0 },
+    ]}
+];
+
+uiConfig.forEach(sec => sec.items.forEach(item => { ui[item.id] = item.val; }));
+ui.shipFDMColor = "#ebe2c7"; ui.shipFDMAxis = "1"; ui.focusTarget = "ship"; ui.dofMethod = "bokeh";
+
+window.UI_CONFIG = uiConfig;
+
+function applyCubeTransform() {
+    cube.position.x = ui.cubePosX; cube.position.z = ui.cubePosZ; cube.position.y = ui.cubePosY;
+    cube.rotation.x = THREE.MathUtils.degToRad(ui.cubeRotX); cube.rotation.y = THREE.MathUtils.degToRad(ui.cubeRotY); cube.rotation.z = THREE.MathUtils.degToRad(ui.cubeRotZ);
+    const s = ui.cubeScale; cube.scale.set(s, s, s);
+    if (window.updateEngravePreview) window.updateEngravePreview();
+}
+function applyCyl1Transform() {
+    triplanarCyl.position.set(ui.cyl1PosX, ui.cyl1PosY, ui.cyl1PosZ);
+    triplanarCyl.rotation.set(THREE.MathUtils.degToRad(ui.cyl1RotX), THREE.MathUtils.degToRad(ui.cyl1RotY), THREE.MathUtils.degToRad(ui.cyl1RotZ));
+    triplanarCyl.scale.setScalar(ui.cyl1Scale);
+}
+function applyCyl2Transform() {
+    procCyl.position.set(ui.cyl2PosX, ui.cyl2PosY, ui.cyl2PosZ);
+    procCyl.rotation.set(THREE.MathUtils.degToRad(ui.cyl2RotX), THREE.MathUtils.degToRad(ui.cyl2RotY), THREE.MathUtils.degToRad(ui.cyl2RotZ));
+    procCyl.scale.setScalar(ui.cyl2Scale);
+}
+function applyShipTransform() {
+    if (!ship) return;
+    ship.position.x = ui.shipPosX; ship.position.z = ui.shipPosZ; ship.position.y = ui.shipPosY;
+    ship.rotation.x = THREE.MathUtils.degToRad(ui.shipRotX); ship.rotation.y = THREE.MathUtils.degToRad(ui.shipRotY); ship.rotation.z = THREE.MathUtils.degToRad(ui.shipRotZ);
+    const s = ui.shipScale; ship.scale.set(s, s, s);
+}
+
+function updateMaterial() {
+  let roughVal = ui.rough, glossVal = ui.gloss, sssVal = ui.sss, ccVal = ui.cc;
+  if (currentMode === 'realism') {
+    glossVal = 1.0 - roughVal; roughVal = Math.max(roughVal - (ccVal * 0.2), 0.0);
+    cubeMat.transmission = sssVal * 0.3; cubeMat.ior = 1.5 + (sssVal * 0.5);
+  } else { 
+    cubeMat.transmission = sssVal; cubeMat.ior = 1.5;
+  }
+  const t = ui.tiling;
+  for (const k in mTex) mTex[k].repeat.set(t, t);
+  
+  cubeMat.roughness = roughVal; 
+  cubeMat.clearcoat = ccVal; 
+  cubeMat.clearcoatRoughness = currentMode === 'realism' ? roughVal * 0.5 : roughVal;
+  cubeMat.aoMapIntensity = ui.ao; 
+  cubeMat.specularIntensity = ui.spec; 
+  cubeMat.needsUpdate = true;
+
+  waterMat.transmission = ui.wTrans; waterMat.thickness = ui.wThick; waterMat.opacity = ui.mainOpacity; waterMat.needsUpdate = true;
+  waterBuggedMat.transmission = ui.wTrans; waterBuggedMat.thickness = ui.wThick; waterBuggedMat.opacity = ui.buggedOpacity; waterBuggedMat.needsUpdate = true;
+  
+  const ap = ui.dofAperture, mb = ui.dofMaxBlur;
+  bokehPass.uniforms['aperture'].value = ap; bokehPass.uniforms['maxblur'].value = mb;
+  diskPass.uniforms.aperture.value = ap; diskPass.uniforms.maxblur.value = mb;
+  tiltPass.uniforms.maxblur.value = mb; tiltPass.uniforms.focusRange.value = ui.dofRange;
+
+  skyMat.uniforms.cloudDensity.value = ui.cloudDensity; skyMat.uniforms.cloudSpeed.value = ui.cloudSpeed; skyMat.uniforms.cloudScale.value = ui.cloudScale;
+
+  const data = generateWaves(ui.waveScale, ui.waveVariety);
+  if (waterMat.userData.shader) {
+    waterMat.userData.shader.uniforms.uWaves.value = data.waves; waterMat.userData.shader.uniforms.uSteeps.value = data.steeps; waterMat.userData.shader.uniforms.uAmps.value = data.amps;
+    waterMat.userData.shader.uniforms.uSSSStrength.value = ui.wSSS; waterMat.userData.shader.uniforms.uRippleSpeed.value = ui.rippleSpeed; waterMat.userData.shader.uniforms.uRippleStrength.value = ui.rippleStrength; waterMat.userData.shader.uniforms.uRippleScale.value = ui.rippleScale;
+  }
+  if (waterBuggedMat.userData.shader) {
+    waterBuggedMat.userData.shader.uniforms.uWaves.value = data.waves; waterBuggedMat.userData.shader.uniforms.uSteeps.value = data.steeps; waterBuggedMat.userData.shader.uniforms.uAmps.value = data.amps;
+    waterBuggedMat.userData.shader.uniforms.uSSSStrength.value = ui.wSSS; waterBuggedMat.userData.shader.uniforms.uRippleSpeed.value = ui.rippleSpeed; waterBuggedMat.userData.shader.uniforms.uRippleStrength.value = ui.rippleStrength; waterBuggedMat.userData.shader.uniforms.uRippleScale.value = ui.rippleScale;
+  }
+  foamLayers.forEach(m => { 
+    m.uniforms.uWaves.value = data.waves; m.uniforms.uSteeps.value = data.steeps; m.uniforms.uAmps.value = data.amps; 
+    m.uniforms.uFoamOpacity.value = ui.foam; m.uniforms.uCubeFoamBoost.value = ui.cubeFoamBoost; m.uniforms.uCubeFoamSpread.value = ui.cubeFoamSpread;
+    m.uniforms.uShipFoamBoost.value = ui.shipFoamBoost; m.uniforms.uShipFoamSpread.value = ui.shipFoamSpread; m.uniforms.uShipStartDensity.value = ui.shipStartDensity; m.uniforms.uShipWakeLength.value = ui.shipWakeLength; m.uniforms.uShipBeamMult.value = ui.shipBeamMult; m.uniforms.uShipFlowOffset.value = ui.shipFlowOffset; m.uniforms.uShipFlowFlip.value = isShipFlowFlipped ? 1.0 : 0.0;
+  });
+
+  dropSpeed = ui.dropSpeed; dropSize = ui.dropSize;
+  const newFogDensity = ui.fogDensity, newCondScale = ui.condScale;
+  if (condensationMat.userData.fogDensity !== newFogDensity || condScale !== newCondScale) {
+    condensationMat.userData.fogDensity = newFogDensity; condScale = newCondScale; generateStaticFog(newFogDensity);
+  }
+  rainSpeed = ui.rainSpeed;
+
+  if (glassBox && glassBoxMat) {
+    glassBoxMat.opacity = ui.glassOpacity; glassBoxMat.transmission = ui.glassTrans; glassBoxMat.roughness = ui.glassRough; glassBoxMat.thickness = ui.glassThick; glassBoxMat.ior = ui.glassIOR; glassBoxMat.clearcoat = ui.glassCC; glassBoxMat.clearcoatRoughness = ui.glassCCRough; glassBoxMat.needsUpdate = true;
+  }
+  if (triplanarCylMat.userData.shader) triplanarCylMat.userData.shader.uniforms.triplanarScale.value = ui.cyl1TexScale;
+  triplanarCylMat.roughness = ui.cyl1Rough; triplanarCylMat.transmission = ui.cyl1Trans; triplanarCylMat.thickness = ui.cyl1Thick; triplanarCylMat.ior = ui.cyl1IOR; triplanarCylMat.clearcoat = ui.cyl1CC; triplanarCylMat.clearcoatRoughness = ui.cyl1CCRough; triplanarCylMat.metalness = ui.cyl1Metal; triplanarCylMat.needsUpdate = true;
+  
+  if (procCylMat.userData.shader) {
+    procCylMat.userData.shader.uniforms.uProcScale.value = ui.cyl2VeinScale; procCylMat.userData.shader.uniforms.uProcVeinInt.value = ui.cyl2VeinInt; procCylMat.userData.shader.uniforms.uVeinThick.value = ui.cyl2VeinThick;
+  }
+  procCylMat.roughness = ui.cyl2Rough; procCylMat.clearcoat = ui.cyl2CC; procCylMat.clearcoatRoughness = ui.cyl2CCRough; procCylMat.metalness = ui.cyl2Metal; procCylMat.needsUpdate = true;
+  
+  shipMats.forEach(m => {
+      if (m.userData.shader) {
+          m.userData.shader.uniforms.uFDMLayerHeight.value = ui.shipFDMLayerHeight; m.userData.shader.uniforms.uFDMBumpStrength.value = ui.shipFDMBumpStrength; m.userData.shader.uniforms.uFDMAxis.value = parseInt(ui.shipFDMAxis); m.userData.shader.uniforms.uFDMColor.value.set(ui.shipFDMColor);
+      }
+      m.roughness = ui.shipRough; m.clearcoat = ui.shipCC; m.clearcoatRoughness = ui.shipCCRough; m.metalness = ui.shipMetal; m.needsUpdate = true;
+  });
+
+  if (window.updateTestText) window.updateTestText();
+}
+
+window.THREE_UI = {
+  setVal: (id, val) => { ui[id] = val; }, 
+  update: updateMaterial, 
+  applyCube: applyCubeTransform, applyCyl1: applyCyl1Transform, applyCyl2: applyCyl2Transform, applyShip: applyShipTransform,
+  setMode: setMode, setDoFMethod: setDoFMethod, setToneMapping: setToneMapping, loadHDRI: loadHDRI, setFocusTarget: (t) => { focusTarget = t; },
+  toggleGlass: () => { isGlassVisible = !isGlassVisible; if(glassBox) glassBox.visible = isGlassVisible; },
+  toggleShipFlow: () => { isShipFlowFlipped = !isShipFlowFlipped; updateMaterial(); },
+  toggleFocusDebug: () => { isFocusDebugVisible = !isFocusDebugVisible; focusSphere.visible = isFocusDebugVisible; }
+};
+
+loadHDRI('kloofendal_puresky');
+updateMaterial();
+applyCubeTransform(); applyCyl1Transform(); applyCyl2Transform(); applyShipTransform();
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    
+    const intersects = raycaster.intersectObject(cube);
+    if (intersects.length > 0) {
+        const hit = intersects[0];
+        const worldNormal = hit.face.normal.clone().transformDirection(cube.matrixWorld).normalize();
+        
+        cubeUniforms.uHoverNormal.value.copy(worldNormal);
+        cubeUniforms.uHoverActive.value = 1.0;
+    } else {
+        cubeUniforms.uHoverActive.value = 0.0;
+    }
+});
+
+renderer.domElement.addEventListener('click', (e) => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    
+    const intersects = raycaster.intersectObject(cube);
+    if (intersects.length > 0) {
+        const hit = intersects[0];
+        const worldNormal = hit.face.normal.clone().transformDirection(cube.matrixWorld).normalize();
+        const localNormal = hit.face.normal.clone();
+        
+        selectedIntersection = { point: hit.point.clone(), normal: worldNormal.clone(), localNormal: localNormal };
+        cubeUniforms.uSelectedNormal.value.copy(worldNormal);
+        cubeUniforms.uSelectedActive.value = 1.0;
+        
+        if (window.onFaceSelected) {
+            const faceNames = ["Правая (X+)", "Левая (X-)", "Верхняя (Y+)", "Нижняя (Y-)", "Передняя (Z+)", "Задняя (Z-)"];
+            const dot = worldNormal.dot(new THREE.Vector3(1,0,0)); if(dot > 0.9) return window.onFaceSelected(0, faceNames[0]);
+            const dot2 = worldNormal.dot(new THREE.Vector3(-1,0,0)); if(dot2 > 0.9) return window.onFaceSelected(1, faceNames[1]);
+            const dot3 = worldNormal.dot(new THREE.Vector3(0,1,0)); if(dot3 > 0.9) return window.onFaceSelected(2, faceNames[2]);
+            const dot4 = worldNormal.dot(new THREE.Vector3(0,-1,0)); if(dot4 > 0.9) return window.onFaceSelected(3, faceNames[3]);
+            const dot5 = worldNormal.dot(new THREE.Vector3(0,0,1)); if(dot5 > 0.9) return window.onFaceSelected(4, faceNames[4]);
+            const dot6 = worldNormal.dot(new THREE.Vector3(0,0,-1)); if(dot6 > 0.9) return window.onFaceSelected(5, faceNames[5]);
+        }
+        
+        if (window.updateEngravePreview) window.updateEngravePreview();
+    }
+});
+
+const _inv = new THREE.Matrix4(), _localCam = new THREE.Vector3(), _localNearest = new THREE.Vector3(), _v = new THREE.Vector3(), _focusWorldPos = new THREE.Vector3();
+let frames = 0, prevTime = performance.now();
+let time = 0, lastFrameTime = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = Math.min((now - lastFrameTime) / 1000, 0.1); 
+  lastFrameTime = now; time += dt; 
+  updateDroplets(dt, time); 
+  const currentSpeed = ui.wSpeed, currentHeight = ui.waveHeight;
+  if (waterMat.userData.shader) { waterMat.userData.shader.uniforms.uTime.value = time; waterMat.userData.shader.uniforms.uSpeed.value = currentSpeed; waterMat.userData.shader.uniforms.uHeight.value = currentHeight; }
+  if (waterBuggedMat.userData.shader) { waterBuggedMat.userData.shader.uniforms.uTime.value = time; waterBuggedMat.userData.shader.uniforms.uSpeed.value = currentSpeed; waterBuggedMat.userData.shader.uniforms.uHeight.value = currentHeight; }
+  const cubeHalfSize = new THREE.Vector3(0.5, 0.5, 0.5).multiplyScalar(ui.cubeScale);
+  foamLayers.forEach(m => {
+    m.uniforms.uTime.value = time; m.uniforms.uSpeed.value = currentSpeed; m.uniforms.uHeight.value = currentHeight; m.uniforms.uCameraPos.value.copy(camera.position);
+    m.uniforms.uCubePos.value.copy(cube.position); m.uniforms.uCubeHalfSize.value.copy(cubeHalfSize); m.uniforms.uCubeRotY.value = cube.rotation.y; 
+    if (ship) {
+        const currentShipHalfSize = shipHalfSize.clone().multiplyScalar(ui.shipScale);
+        m.uniforms.uShipPos.value.copy(ship.position); m.uniforms.uShipHalfSize.value.copy(currentShipHalfSize); m.uniforms.uShipRotY.value = ship.rotation.y; 
+    }
+  });
+  let target = cube; let halfX = 0.5, halfY = 0.5, halfZ = 0.5;
+  if (focusTarget === 'cyl1') { target = triplanarCyl; halfX = 0.5; halfY = 1.0; halfZ = 0.5; } 
+  else if (focusTarget === 'cyl2') { target = procCyl; halfX = 0.5; halfY = 1.0; halfZ = 0.5; } 
+  else if (focusTarget === 'panel') { target = condensationPanel; halfX = 0.375; halfY = 1.5; halfZ = 0.05; } 
+  else if (focusTarget === 'ship' && ship) { target = ship; halfX = shipHalfSize.x; halfY = shipHalfSize.y; halfZ = shipHalfSize.z; }
+  target.updateMatrixWorld();
+  _inv.copy(target.matrixWorld).invert(); _localCam.copy(camera.position).applyMatrix4(_inv);
+  _localNearest.set(THREE.MathUtils.clamp(_localCam.x, -halfX, halfX), THREE.MathUtils.clamp(_localCam.y, -halfY, halfY), THREE.MathUtils.clamp(_localCam.z, -halfZ, halfZ));
+  _focusWorldPos.copy(_localNearest).applyMatrix4(target.matrixWorld); _v.copy(_focusWorldPos).applyMatrix4(camera.matrixWorldInverse);
+  const focusDist = -_v.z;
+  bokehPass.uniforms['focus'].value = focusDist; diskPass.uniforms.focus.value = focusDist; tiltPass.uniforms.focus.value = focusDist;
+  if (isFocusDebugVisible) { focusSphere.position.copy(_focusWorldPos); focusSphereMat.opacity = 0.4 + Math.sin(time * 5) * 0.2; focusGlowMat.opacity = 0.1 + Math.sin(time * 5 + 1) * 0.05; }
+  controls.update(); composer.render(); skyMat.uniforms.time.value = time;
+  
+  frames++;
+  if (now >= prevTime + 1000) {
+    const fpsElement = document.getElementById('stat-fps');
+    const polysElement = document.getElementById('stat-polys');
+    if(fpsElement) fpsElement.innerText = Math.round((frames * 1000) / (now - prevTime));
+    if(polysElement) polysElement.innerText = renderer.info.render.triangles.toLocaleString('ru-RU');
+    frames = 0; prevTime = now;
+  }
+}
+animate();
+
+window.addEventListener('resize', () => {
+  const w = Math.max(1, innerWidth), h = Math.max(1, innerHeight);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  renderer.setSize(w, h); composer.setSize(w, h);
+  diskPass.uniforms.aspect.value = w / h; tiltPass.uniforms.aspect.value = w / h;
+});
+</script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const uiConfig = window.UI_CONFIG || [];
+
+function useGlassEffect() {
+    const ref = useRef(null);
+    const [active, setActive] = useState(false);
+    useEffect(() => {
+        const g = ref.current;
+        if (!g) return;
+        let mx = 0, my = 0, tx = 0, ty = 0, op = 0, top = 0, raf;
+        const onMove = (e) => {
+            const r = g.getBoundingClientRect();
+            tx = e.clientX - r.left; ty = e.clientY - r.top; setActive(true);
+        };
+        const onLeave = () => setActive(false);
+        const tick = () => {
+            const k_pos = 0.18, k_opa = 0.12;
+            mx += (tx - mx) * k_pos; my += (ty - my) * k_pos;
+            op += ((active ? 1 : 0) - op) * k_opa;
+            g.style.setProperty('--mx', mx.toFixed(1) + 'px');
+            g.style.setProperty('--my', my.toFixed(1) + 'px');
+            g.style.setProperty('--spec-opacity', op.toFixed(3));
+            raf = requestAnimationFrame(tick);
+        };
+        g.addEventListener('pointermove', onMove);
+        g.addEventListener('pointerenter', onMove);
+        g.addEventListener('pointerleave', onLeave);
+        tick();
+        return () => {
+            g.removeEventListener('pointermove', onMove);
+            g.removeEventListener('pointerenter', onMove);
+            g.removeEventListener('pointerleave', onLeave);
+            cancelAnimationFrame(raf);
+        };
+    }, [active]);
+    return ref;
+}
+
+function useInertiaScroll(params, thumbRef) {
+    const innerRef = useRef(null);
+    const paramsRef = useRef(params);
+    useEffect(() => { paramsRef.current = params; }, [params]);
+
+    useEffect(() => {
+        const el = innerRef.current;
+        const thumb = thumbRef.current;
+        if (!el || !thumb) return;
+        const parent = el.parentElement;
+        let scrollY = 0;
+        let velY = 0;
+        let raf = null;
+        let maxScroll = 0;
+        
+        let isDraggingThumb = false;
+        let dragStartY = 0;
+        let dragStartScrollY = 0;
+
+        const updateThumb = () => {
+            if (!thumbRef.current) return;
+            const trackHeight = parent.clientHeight;
+            const contentHeight = el.scrollHeight;
+            
+            if (contentHeight <= trackHeight) {
+                thumb.style.display = 'none';
+                return;
+            } else {
+                thumb.style.display = 'block';
+            }
+            
+            const thumbHeight = Math.max(30, (trackHeight / contentHeight) * trackHeight);
+            const scrollRange = -maxScroll; 
+            const currentScroll = -scrollY; 
+            const thumbRange = trackHeight - thumbHeight;
+            
+            const thumbY = (scrollRange > 0 && thumbRange > 0) ? (currentScroll / scrollRange) * thumbRange : 0;
+            
+            thumb.style.height = `${thumbHeight}px`;
+            thumb.style.transform = `translateY(${thumbY}px)`;
+            
+            const shouldShow = isDraggingThumb || Math.abs(velY) > 0.1;
+            thumb.parentElement.classList.toggle('visible', shouldShow);
+        };
+
+        const recalc = () => {
+            maxScroll = parent.clientHeight - el.scrollHeight;
+            if (maxScroll > 0) maxScroll = 0;
+            if (scrollY > 0) scrollY = 0;
+            if (scrollY < maxScroll) scrollY = maxScroll;
+            el.style.transform = `translateY(${scrollY}px)`;
+            updateThumb();
+        };
+
+        const update = () => {
+            const p = paramsRef.current;
+            
+            maxScroll = parent.clientHeight - el.scrollHeight;
+            if (maxScroll > 0) maxScroll = 0;
+            
+            scrollY += velY;
+            
+            let isOutOfBounds = false;
+            let boundary = 0;
+            if (scrollY > 0) {
+                isOutOfBounds = true;
+                boundary = 0;
+            } else if (scrollY < maxScroll) {
+                isOutOfBounds = true;
+                boundary = maxScroll;
+            }
+            
+            if (isOutOfBounds) {
+                const overshoot = scrollY - boundary;
+                const springForce = -overshoot * p.spring;
+                velY += springForce;
+                velY *= 0.6; 
+                
+                if (Math.abs(overshoot) < 0.5 && Math.abs(velY) < 0.5) {
+                    scrollY = boundary;
+                    velY = 0;
+                    el.style.transform = `translateY(${scrollY}px)`;
+                    updateThumb();
+                    cancelAnimationFrame(raf);
+                    raf = null;
+                    return;
+                }
+            } else {
+                if (Math.abs(velY) < 0.1) {
+                    velY = 0;
+                    updateThumb();
+                    cancelAnimationFrame(raf);
+                    raf = null;
+                    return;
+                }
+                velY *= p.friction;
+            }
+            
+            el.style.transform = `translateY(${scrollY}px)`;
+            updateThumb();
+            raf = requestAnimationFrame(update);
+        };
+
+        const onWheel = (e) => {
+            e.preventDefault();
+            maxScroll = parent.clientHeight - el.scrollHeight;
+            if (maxScroll > 0) maxScroll = 0;
+            
+            velY -= e.deltaY * paramsRef.current.wheelMultiplier;
+            if (!raf) raf = requestAnimationFrame(update);
+        };
+
+        const onThumbDown = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            isDraggingThumb = true;
+            dragStartY = e.clientY;
+            dragStartScrollY = scrollY;
+            velY = 0;
+            if (raf) { cancelAnimationFrame(raf); raf = null; }
+            thumb.setPointerCapture(e.pointerId);
+            thumb.parentElement.classList.add('visible');
+        };
+
+        const onThumbMove = (e) => {
+            if (!isDraggingThumb) return;
+            const deltaY = e.clientY - dragStartY;
+            const trackHeight = parent.clientHeight;
+            const scrollRange = -maxScroll; 
+            const thumbHeight = thumb.clientHeight;
+            const thumbRange = trackHeight - thumbHeight;
+            
+            const ratio = (scrollRange > 0 && thumbRange > 0) ? scrollRange / thumbRange : 0;
+            
+            let newY = dragStartScrollY - (deltaY * ratio);
+            
+            if (newY > 0) newY = 0;
+            if (newY < maxScroll) newY = maxScroll;
+            
+            scrollY = newY;
+            el.style.transform = `translateY(${scrollY}px)`;
+            updateThumb();
+        };
+
+        const onThumbUp = (e) => {
+            if (!isDraggingThumb) return;
+            isDraggingThumb = false;
+            thumb.releasePointerCapture(e.pointerId);
+        };
+
+        parent.addEventListener('wheel', onWheel, { passive: false });
+        thumb.addEventListener('pointerdown', onThumbDown);
+        window.addEventListener('pointermove', onThumbMove);
+        window.addEventListener('pointerup', onThumbUp);
+        
+        const ro = new ResizeObserver(recalc);
+        ro.observe(el);
+        ro.observe(parent);
+
+        setTimeout(recalc, 50);
+
+        return () => {
+            parent.removeEventListener('wheel', onWheel);
+            thumb.removeEventListener('pointerdown', onThumbDown);
+            window.removeEventListener('pointermove', onThumbMove);
+            window.removeEventListener('pointerup', onThumbUp);
+            ro.disconnect();
+            cancelAnimationFrame(raf);
+        };
+    }, []);
+    return innerRef;
+}
+
+const ScrollArea = ({ children, params }) => {
+    const thumbRef = useRef(null);
+    const innerRef = useInertiaScroll(params, thumbRef);
+    return (
+        <div className="fm-glass-in">
+            <div ref={innerRef} style={{ willChange: 'transform', paddingBottom: '20px' }}>
+                {children}
+            </div>
+            <div className="custom-scrollbar">
+                <div ref={thumbRef} className="custom-scrollbar-thumb"></div>
+            </div>
+        </div>
+    );
+};
+
+const Slider = ({ id, label, min, max, step, val, onChange, unit }) => {
+    const [value, setValue] = useState(val);
+    const handleChange = (e) => {
+        const v = parseFloat(e.target.value);
+        setValue(v);
+        if (onChange) onChange(v);
+    };
+    return (
+        <div className="control-group">
+            <label>{label} <b>{value.toFixed(3)}{unit || ''}</b></label>
+            <input type="range" id={id} min={min} max={max} step={step} value={value} onChange={handleChange} />
+        </div>
+    );
+};
+
+const Select = ({ id, label, options, val, onChange }) => (
+    <div className="control-group">
+        {label && <label>{label}</label>}
+        <select id={id} value={val} onChange={(e) => onChange(e.target.value)}>
+            {options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+        </select>
+    </div>
+);
+
+const Toggle = ({ label, active, onClick }) => (
+    <div className="control-group" style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 15}}>
+        <label style={{marginBottom:0}}>{label}</label>
+        <div className={`toggle-switch ${active ? 'active' : ''}`} onClick={onClick}></div>
+    </div>
+);
+
+const Section = ({ title, children }) => (
+    <>
+        <div className="section-header">{title}</div>
+        {children}
+    </>
+);
+
+const CurveEditor = ({ onCurveChange }) => {
+    const [points, setPoints] = useState([{x: 30, y: 170}, {x: 120, y: 130}, {x: 60, y: 70}, {x: 90, y: 30}]);
+    const [dragging, setDragging] = useState(null);
+    const svgRef = useRef(null);
+    
+    useEffect(() => { 
+        if (onCurveChange) onCurveChange(points); 
+    }, [points]);
+    
+    const handlePointerDown = (idx) => (e) => { 
+        e.preventDefault(); 
+        setDragging(idx); 
+    };
+    
+    useEffect(() => {
+        if (dragging === null) return;
+        const handleMove = (e) => {
+            if (!svgRef.current) return;
+            const svg = svgRef.current;
+            const pt = svg.createSVGPoint();
+            pt.x = e.clientX;
+            pt.y = e.clientY;
+            const ctm = svg.getScreenCTM();
+            if (ctm) {
+                const svgP = pt.matrixTransform(ctm.inverse());
+                const newPts = [...points];
+                newPts[dragging] = { 
+                    x: Math.max(0, Math.min(300, svgP.x)), 
+                    y: Math.max(0, Math.min(200, svgP.y)) 
+                };
+                setPoints(newPts);
+            }
+        };
+        const handleUp = () => setDragging(null);
+        window.addEventListener('pointermove', handleMove);
+        window.addEventListener('pointerup', handleUp);
+        return () => {
+            window.removeEventListener('pointermove', handleMove);
+            window.removeEventListener('pointerup', handleUp);
+        };
+    }, [dragging, points]);
+    
+    const pathD = `M ${points[0].x},${points[0].y} C ${points[1].x},${points[1].y} ${points[2].x},${points[2].y} ${points[3].x},${points[3].y}`;
+    
+    const hasCrossing = points.some((p, i) => 
+        (i > 0 && p.y >= points[i-1].y) || (i < points.length - 1 && p.y <= points[i+1].y)
+    );
+    
+    return (
+        <svg ref={svgRef} className="svg-editor" viewBox="0 0 300 200" preserveAspectRatio="none">
+            <path d={pathD} style={{ stroke: hasCrossing ? '#ff4d4d' : 'var(--accent)' }} />
+            {points.map((p, i) => {
+                const crossed = (i > 0 && p.y >= points[i-1].y) || (i < points.length - 1 && p.y <= points[i+1].y);
+                return (
+                    <g key={i}>
+                        <circle 
+                            cx={p.x} 
+                            cy={p.y} 
+                            r={dragging === i ? 9 : 6} 
+                            fill={crossed ? "#ff4d4d" : "#fff"} 
+                            stroke={crossed ? "#ff1a1a" : "var(--accent)"} 
+                            strokeWidth="2" 
+                            cursor="grab" 
+                            style={{ transition: 'r 0.2s, fill 0.2s, stroke 0.2s' }}
+                            className={dragging === i ? 'dragging' : ''} 
+                            onPointerDown={handlePointerDown(i)} 
+                        />
+                        <text 
+                            x={p.x + 12} 
+                            y={p.y + 4} 
+                            fill={crossed ? "#ff1a1a" : "var(--accent)"} 
+                            fontSize="12" 
+                            fontWeight="900" 
+                            style={{ pointerEvents: 'none', userSelect: 'none' }}
+                        >
+                            {i + 1}
+                        </text>
+                    </g>
+                );
+            })}
+        </svg>
+    );
+};
+
+function App() {
+    const glassRef = useGlassEffect();
+    const statsRef = useGlassEffect();
+    const leftTopRef = useGlassEffect();
+    const leftBottomRef = useGlassEffect();
+    const [faceInfo, setFaceInfo] = useState("Наведите на куб и кликните");
+    const [engravingText, setEngravingText] = useState("");
+    const [isEngraving, setIsEngraving] = useState(false);
+    const [engravingStatus, setEngravingStatus] = useState("");
+    const [read, setRead] = useState('clear');
+    const [state, setState] = useState({});
+    const [isGlassVisible, setIsGlassVisible] = useState(false);
+    const [isShipFlowFlipped, setIsShipFlowFlipped] = useState(false);
+    const [isFocusDebugVisible, setIsFocusDebugVisible] = useState(false);
+    const [leafParams, setLeafParams] = useState({ leafHeight: 1.5, leafWidth: 0.4, lobes: 6, curl: 0.5, thickness: 0.05, count: 8, bellR1: 0.6, bellR2: 0.8, bellH: 1.2, leafTilt: 0, leafSpread: 0, curlStart: 0.3 });
+    const [lathePoints, setLathePoints] = useState([{x: 30, y: 170}, {x: 120, y: 130}, {x: 60, y: 70}, {x: 90, y: 30}]);
+    const [latheWidth, setLatheWidth] = useState(1.0);
+
+    useEffect(() => {
+        const initState = {};
+        uiConfig.forEach(sec => sec.items.forEach(item => { initState[item.id] = item.val; }));
+        initState.shipFDMColor = "#ebe2c7"; initState.shipFDMAxis = "1"; initState.focusTarget = "ship"; 
+        initState.dofMethod = "bokeh";
+        initState.mode = 'realism';
+        setState(initState);
+
+        window.onFaceSelected = (faceIdx, faceName) => {
+            setFaceInfo(`Выбрана грань: ${faceName}`);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!window.UI_STATE) window.UI_STATE = {};
+        window.UI_STATE.engravingText = engravingText;
+        window.UI_STATE.engraveSize = state.engraveSize || 0.25;
+        window.UI_STATE.engraveDepth = state.engraveDepth || 0.5;
+        if (window.updateEngravePreview) window.updateEngravePreview();
+    }, [engravingText, state.engraveSize, state.engraveDepth]);
+
+    const handleChange = (id, val) => {
+        setState(prev => ({ ...prev, [id]: val }));
+        if (window.THREE_UI) {
+            window.THREE_UI.setVal(id, val); 
+            if (id === 'hdri') window.THREE_UI.loadHDRI(val);
+            else if (id === 'dofMethod') window.THREE_UI.setDoFMethod(val);
+            else if (id === 'toneMapping') window.THREE_UI.setToneMapping(val);
+            else if (id === 'focusTarget') window.THREE_UI.setFocusTarget(val);
+            else if (id === 'mode') window.THREE_UI.setMode(val);
+            else if (id === 'shipFDMColor' || id === 'shipFDMAxis') {
+                window.THREE_UI.update();
+            } else {
+                window.THREE_UI.update();
+                if (id.startsWith('cube')) window.THREE_UI.applyCube();
+                if (id.startsWith('cyl1')) window.THREE_UI.applyCyl1();
+                if (id.startsWith('cyl2')) window.THREE_UI.applyCyl2();
+                if (id.startsWith('ship') && !id.startsWith('shipFDM')) window.THREE_UI.applyShip();
+            }
+        }
+    };
+
+    const handleEngrave = async () => {
+        if (!window.updateEngravePreview || !window.triggerManualCSG) return;
+        setIsEngraving(true);
+        setEngravingStatus("Генерация предпросмотра...");
+        try {
+            window.updateEngravePreview();
+            await new Promise(r => setTimeout(r, 50));
+            setEngravingStatus("Вычисление CSG (может занять время)...");
+            await window.triggerManualCSG();
+            setEngravingStatus("Гравировка успешно нанесена!");
+        } catch(e) {
+            setEngravingStatus(typeof e === "string" ? e : "Ошибка гравировки: " + e.message);
+        }
+        setIsEngraving(false);
+    };
+
+    const handleReset = () => {
+        if (window.resetCubeGeometry) {
+            window.resetCubeGeometry();
+            setEngravingStatus("Куб сброшен к оригиналу.");
+        }
+    };
+
+    const handleLeafChange = (key, val) => {
+        const newParams = { ...leafParams, [key]: val };
+        setLeafParams(newParams);
+        if (window.updateCapital) window.updateCapital(newParams);
+    };
+
+    const handleCurveChange = useCallback((pts) => {
+        setLathePoints(pts);
+        if (window.updateLathe) window.updateLathe(pts, latheWidth);
+    }, [latheWidth]);
+
+    const handleWidthChange = (val) => {
+        setLatheWidth(val);
+        if (window.updateLathe) window.updateLathe(lathePoints, val);
+    };
+
+    const toggleGlass = () => {
+        const newVal = !isGlassVisible;
+        setIsGlassVisible(newVal);
+        if (window.THREE_UI) window.THREE_UI.toggleGlass();
+    };
+    const toggleShipFlow = () => {
+        const newVal = !isShipFlowFlipped;
+        setIsShipFlowFlipped(newVal);
+        if (window.THREE_UI) window.THREE_UI.toggleShipFlow();
+    };
+    const toggleFocusDebug = () => {
+        const newVal = !isFocusDebugVisible;
+        setIsFocusDebugVisible(newVal);
+        if (window.THREE_UI) window.THREE_UI.toggleFocusDebug();
+    };
+
+    useEffect(() => {
+        if (glassRef.current) glassRef.current.style.setProperty('--blur', state.frost + 'px');
+    }, [state.frost, glassRef]);
+    useEffect(() => {
+        if (document.getElementById('fmGlass')) document.getElementById('fmGlass').style.height = state.height + 'vh';
+    }, [state.height]);
+    useEffect(() => {
+        if (glassRef.current) glassRef.current.setAttribute('data-read', read);
+        if (statsRef.current) statsRef.current.setAttribute('data-read', read);
+        if (leftTopRef.current) leftTopRef.current.setAttribute('data-read', read);
+        if (leftBottomRef.current) leftBottomRef.current.setAttribute('data-read', read);
+    }, [read, glassRef, statsRef, leftTopRef, leftBottomRef]);
+
+    const scrollParams = {
+        friction: state.scrollFriction || 0.90,
+        wheelMultiplier: state.scrollWheelSpeed || 0.10,
+        spring: state.scrollSpring || 0.015
+    };
+
+    return (
+        <>
+            <aside id="stats" className="fm-glass" data-read="clear" ref={statsRef}>
+                <i className="fm-refract"></i><i className="fm-tint"></i><i className="fm-inner"></i><i className="fm-grain"></i><i className="fm-streak"></i>
+                <div className="stats-content">FPS: <span id="stat-fps">0</span> | Полигоны: <span id="stat-polys">0</span></div>
+            </aside>
+
+            <aside id="fmGlassLeftTop" className="fm-glass" data-read="clear" ref={leftTopRef}>
+                <i className="fm-refract"></i><i className="fm-tint"></i><i className="fm-inner"></i><i className="fm-grain"></i><i className="fm-streak"></i>
+                <div className="panel-head">
+                    <div className="panel-title">💠 Фигура вращения</div>
+                    <div className="panel-sub">Lathe Geometry (Безье)</div>
+                </div>
+                <ScrollArea params={scrollParams}>
+                    <Section title="Редактор кривой">
+                        <p className="hint">Тяните узлы кривой для изменения профиля. Красным отмечены точки, пересекающие уровень соседней.</p>
+                        <CurveEditor onCurveChange={handleCurveChange} />
+                    </Section>
+                    <Section title="Параметры">
+                        <Slider label="Ширина колонны (Width)" min="0.2" max="3" step="0.1" val={latheWidth} onChange={handleWidthChange} />
+                    </Section>
+                </ScrollArea>
+            </aside>
+
+            <aside id="fmGlassLeftBottom" className="fm-glass" data-read="clear" ref={leftBottomRef}>
+                <i className="fm-refract"></i><i className="fm-tint"></i><i className="fm-inner"></i><i className="fm-grain"></i><i className="fm-streak"></i>
+                <div className="panel-head">
+                    <div className="panel-title">💠 Капитель (Акант)</div>
+                    <div className="panel-sub">Procedural Capital Generator</div>
+                </div>
+                <ScrollArea params={scrollParams}>
+                    <Section title="Параметры листа и сборки">
+                        <Slider label="Высота листа" min="0.5" max="3" step="0.1" val={leafParams.leafHeight} onChange={(v) => handleLeafChange('leafHeight', v)} />
+                        <Slider label="Ширина листа" min="0.1" max="1" step="0.05" val={leafParams.leafWidth} onChange={(v) => handleLeafChange('leafWidth', v)} />
+                        <Slider label="Кол-во лопастей" min="3" max="12" step="1" val={leafParams.lobes} onChange={(v) => handleLeafChange('lobes', v)} />
+                        <Slider label="Сила изгиба (Curl)" min="0" max="2.0" step="0.05" val={leafParams.curl} onChange={(v) => handleLeafChange('curl', v)} />
+                        <Slider label="Начало изгиба" min="0" max="0.9" step="0.05" val={leafParams.curlStart} onChange={(v) => handleLeafChange('curlStart', v)} />
+                        <Slider label="Расширение кверху (Spread)" min="0" max="1.5" step="0.05" val={leafParams.leafSpread} onChange={(v) => handleLeafChange('leafSpread', v)} />
+                        <Slider label="Наклон листа (Tilt)" min="-45" max="45" step="1" val={leafParams.leafTilt} onChange={(v) => handleLeafChange('leafTilt', v)} unit="°" />
+                        <Slider label="Толщина" min="0.01" max="0.2" step="0.01" val={leafParams.thickness} onChange={(v) => handleLeafChange('thickness', v)} />
+                        <Slider label="Кол-во листьев" min="4" max="16" step="1" val={leafParams.count} onChange={(v) => handleLeafChange('count', v)} />
+                        <Slider label="Радиус низа колокола" min="0.3" max="1.5" step="0.1" val={leafParams.bellR1} onChange={(v) => handleLeafChange('bellR1', v)} />
+                        <Slider label="Радиус верха колокола" min="0.3" max="1.5" step="0.1" val={leafParams.bellR2} onChange={(v) => handleLeafChange('bellR2', v)} />
+                        <Slider label="Высота колокола" min="0.5" max="3" step="0.1" val={leafParams.bellH} onChange={(v) => handleLeafChange('bellH', v)} />
+                    </Section>
+                </ScrollArea>
+            </aside>
+
+            <aside id="fmGlass" className="fm-glass" data-read="clear" ref={glassRef}>
+                <i className="fm-refract"></i><i className="fm-tint"></i><i className="fm-inner"></i><i className="fm-grain"></i><i className="fm-streak"></i>
+                <div className="panel-head">
+                    <div className="panel-title">💠 React + Procedural Configurator</div>
+                    <div className="panel-sub">Liquid Glass UI + CSG Engraving</div>
+                </div>
+                <ScrollArea params={scrollParams}>
+                    <Section title="Меню (Liquid Glass)">
+                        <Slider id="frost" label="Мутность" min="0" max="60" step="1" val={state.frost || 4} onChange={(v) => handleChange('frost', v)} unit="px" />
+                        <Slider id="height" label="Высота меню" min="30" max="95" step="1" val={state.height || 84} onChange={(v) => handleChange('height', v)} unit="vh" />
+                        <Slider id="scrollFriction" label="Инерция (Трение)" min="0.10" max="1.00" step="0.01" val={state.scrollFriction || 0.90} onChange={(v) => handleChange('scrollFriction', v)} />
+                        <Slider id="scrollWheelSpeed" label="Скорость колесика" min="0.01" max="1.00" step="0.01" val={state.scrollWheelSpeed || 0.10} onChange={(v) => handleChange('scrollWheelSpeed', v)} />
+                        <Slider id="scrollSpring" label="Подпружинивание" min="0.005" max="0.500" step="0.005" val={state.scrollSpring || 0.015} onChange={(v) => handleChange('scrollSpring', v)} />
+                        <div className="control-group">
+                            <label>Читаемость</label>
+                            <div className="mode-switcher" style={{padding: '5px'}}>
+                                {['clear', 'milk', 'dark', 'scrim'].map(r => (
+                                    <div key={r} className={`mode-btn ${read === r ? 'active' : ''}`} onClick={() => setRead(r)}>
+                                        {r === 'clear' ? 'Чистое' : r === 'milk' ? 'Молоко' : r === 'dark' ? 'Тёмное' : 'Скрим'}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </Section>
+
+                    <Section title="1. Зона гравировки (Куб)">
+                        <div className="control-group">
+                            <label>Статус грани:</label>
+                            <p className="hint" style={{fontSize: '12px', color: 'var(--accent)', fontWeight: 700}}>{faceInfo}</p>
+                        </div>
+                        <Slider id="engraveSize" label="Размер шрифта" min="0.05" max="1.0" step="0.05" val={state.engraveSize || 0.25} onChange={(v) => handleChange('engraveSize', v)} />
+                        <Slider id="engraveDepth" label="Глубина (Экструд)" min="0.05" max="1.0" step="0.05" val={state.engraveDepth || 0.5} onChange={(v) => handleChange('engraveDepth', v)} />
+                        <div className="control-group">
+                            <label>Текст гравировки <b>{engravingText.length}/20</b></label>
+                            <input 
+                                type="text" 
+                                className="text-input" 
+                                value={engravingText} 
+                                onChange={(e) => setEngravingText(e.target.value)} 
+                                placeholder="Введите имя..."
+                                maxLength="20"
+                                disabled={isEngraving}
+                            />
+                        </div>
+                        <button className="action-btn" onClick={handleEngrave} disabled={isEngraving}>
+                            {isEngraving ? 'Идет гравировка...' : 'Выгравировать текст'}
+                        </button>
+                        <button className="action-btn danger" onClick={handleReset} disabled={isEngraving}>
+                            Сбросить куб
+                        </button>
+                        {engravingStatus && <p className="hint" style={{ marginTop: '8px', fontSize: '12px', color: isEngraving ? 'var(--accent)' : '#ff4d4d', fontWeight: 700 }}>{engravingStatus}</p>}
+                    </Section>
+
+                    {uiConfig.map(sec => {
+                        if (sec.section.includes("Зона гравировки") || sec.section.includes("Фигура вращения") || sec.section.includes("Капители")) return null;
+                        return (
+                            <Section key={sec.section} title={sec.section}>
+                                {sec.section === "Меню (Liquid Glass)" && (
+                                    <div className="control-group">
+                                        <label>Читаемость</label>
+                                        <div className="mode-switcher" style={{padding: '5px'}}>
+                                            {['clear', 'milk', 'dark', 'scrim'].map(r => (
+                                                <div key={r} className={`mode-btn ${read === r ? 'active' : ''}`} onClick={() => setRead(r)}>
+                                                    {r === 'clear' ? 'Чистое' : r === 'milk' ? 'Молоко' : r === 'dark' ? 'Тёмное' : 'Скрим'}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {sec.section === "Куб и Физика" && (
+                                    <div className="mode-switcher">
+                                        <div className={`mode-btn ${state.mode === 'realism' ? 'active' : ''}`} onClick={() => handleChange('mode', 'realism')}>Реализм (Куб)</div>
+                                        <div className={`mode-btn ${state.mode === 'freedom' ? 'active' : ''}`} onClick={() => handleChange('mode', 'freedom')}>Свобода (Куб)</div>
+                                    </div>
+                                )}
+                                {sec.section === "Материал Триремы (3D Печать ABS)" && (
+                                    <>
+                                        <div className="control-group">
+                                            <label>Цвет пластика <input type="color" id="ctrl-shipFDMColor" value={state.shipFDMColor || "#ebe2c7"} onChange={(e) => handleChange('shipFDMColor', e.target.value)} /></label>
+                                        </div>
+                                        <Select id="ctrl-shipFDMAxis" label="Ось печати (Слои)" val={state.shipFDMAxis || "1"} onChange={(v) => handleChange('shipFDMAxis', v)} options={[
+                                            { value: "0", label: "Ось X" }, { value: "1", label: "Ось Y (Вверх)" }, { value: "2", label: "Ось Z (Вдоль)" }
+                                        ]} />
+                                    </>
+                                )}
+                                {sec.section === "Пена Триремы (Парабола)" && (
+                                    <Toggle label="Развернуть след (180°)" active={isShipFlowFlipped} onClick={toggleShipFlow} />
+                                )}
+                                {sec.section === "Стекло Bounding Box (Трирема)" && (
+                                    <Toggle label="Видимость стекла" active={isGlassVisible} onClick={toggleGlass} />
+                                )}
+                                {sec.section === "Волны и Вода" && (
+                                    <div className="mode-switcher">
+                                        <div className={`mode-btn ${state.mode === 'realism' ? 'active' : ''}`} onClick={() => handleChange('mode', 'realism')}>Реализм (Куб)</div>
+                                        <div className={`mode-btn ${state.mode === 'freedom' ? 'active' : ''}`} onClick={() => handleChange('mode', 'freedom')}>Свобода (Куб)</div>
+                                    </div>
+                                )}
+                                {sec.section === "Фокус (DoF)" && (
+                                    <>
+                                        <Toggle label="Индикатор фокуса (Розовый шар)" active={isFocusDebugVisible} onClick={toggleFocusDebug} />
+                                        <Select id="ctrl-focusTarget" val={state.focusTarget || "ship"} onChange={(v) => handleChange('focusTarget', v)} options={[
+                                            { value: "cube", label: "Цель фокуса: Куб" },
+                                            { value: "cyl1", label: "Цель фокуса: Цилиндр 1" },
+                                            { value: "cyl2", label: "Цель фокуса: Цилиндр 2" },
+                                            { value: "panel", label: "Цель фокуса: Стекло" },
+                                            { value: "ship", label: "Цель фокуса: Корабль" }
+                                        ]} />
+                                        <Select id="ctrl-dofMethod" val={state.dofMethod || "bokeh"} onChange={(v) => handleChange('dofMethod', v)} options={[
+                                            { value: "bokeh", label: "Bokeh (CoC, встроенный)" },
+                                            { value: "disk", label: "Disk (Vogel, HQ)" },
+                                            { value: "tilt", label: "Tilt-Shift (Soft)" }
+                                        ]} />
+                                    </>
+                                )}
+                                {sec.items.map(item => {
+                                    if (item.options) {
+                                        return <Select key={item.id} id={item.id} label={item.label} options={item.options} val={state[item.id] || item.val} onChange={(v) => handleChange(item.id, v)} />;
+                                    }
+                                    if (item.type === 'text') {
+                                        return (
+                                            <div className="control-group" key={item.id}>
+                                                <label>{item.label}</label>
+                                                <input 
+                                                    type="text" 
+                                                    className="text-input" 
+                                                    value={state[item.id] || ''} 
+                                                    onChange={(e) => handleChange(item.id, e.target.value)} 
+                                                />
+                                            </div>
+                                        );
+                                    }
+                                    return <Slider key={item.id} id={item.id} label={item.label} min={item.min} max={item.max} step={item.step} val={state[item.id] !== undefined ? state[item.id] : item.val} onChange={(v) => handleChange(item.id, v)} unit={item.unit} />;
+                                })}
+                                {sec.section === "Меню (Liquid Glass)" && (
+                                     <div className="control-group">
+                                        <label>Читаемость</label>
+                                        <div className="mode-switcher" style={{padding: '5px'}}>
+                                            {['clear', 'milk', 'dark', 'scrim'].map(r => (
+                                                <div key={r} className={`mode-btn ${read === r ? 'active' : ''}`} onClick={() => setRead(r)}>
+                                                    {r === 'clear' ? 'Чистое' : r === 'milk' ? 'Молоко' : r === 'dark' ? 'Тёмное' : 'Скрим'}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </Section>
+                        );
+                    })}
+                </ScrollArea>
+            </aside>
+        </>
+    );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
